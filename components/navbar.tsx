@@ -14,12 +14,13 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useWalletAuth } from "@/components/auth/wallet-context"
 import { NotificationCenter } from "@/components/notification-center"
+import { ThemeToggleSimple } from "@/components/theme-toggle"
 
 export function Navbar() {
   const { user, isAuthenticated, logout } = useWalletAuth()
 
   return (
-    <header className="border-b border-gray-200 bg-white">
+    <header className="border-b border-border bg-background">
       <div className="container mx-auto flex h-16 items-center justify-between px-4">
         <div className="flex items-center">
           <Link href="/" className="text-2xl font-bold tracking-tighter">
@@ -27,13 +28,13 @@ export function Navbar() {
           </Link>
         </div>
         <nav className="hidden md:flex items-center space-x-6">
-          <Link href="/docs" className="text-sm text-gray-600 hover:text-gray-900 transition-colors">
+          <Link href="/docs" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
             Docs
           </Link>
           <Link
             href="https://github.com"
             target="_blank"
-            className="text-sm text-gray-600 hover:text-gray-900 transition-colors flex items-center gap-1"
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
           >
             <Github size={16} />
             GitHub
@@ -41,14 +42,16 @@ export function Navbar() {
           <Link
             href="https://twitter.com"
             target="_blank"
-            className="text-sm text-gray-600 hover:text-gray-900 transition-colors flex items-center gap-1"
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
           >
             <Twitter size={16} />
             Twitter
           </Link>
-          <Button variant="outline" size="sm" className="ml-4 border-gray-300 text-gray-900 hover:bg-gray-100">
+          <Button variant="outline" size="sm" className="ml-4 border-border hover:bg-muted">
             Join Telegram <ExternalLink size={14} className="ml-1" />
           </Button>
+
+          <ThemeToggleSimple />
 
           {isAuthenticated && <NotificationCenter />}
 
@@ -85,13 +88,15 @@ export function Navbar() {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <Button asChild className="bg-black text-white hover:bg-gray-800">
+            <Button asChild className="bg-primary text-primary-foreground hover:bg-primary/90">
               <Link href="/auth/login">Connect Wallet</Link>
             </Button>
           )}
         </nav>
 
         <div className="md:hidden flex items-center space-x-4">
+          <ThemeToggleSimple />
+          
           {isAuthenticated && <NotificationCenter />}
 
           {isAuthenticated ? (
@@ -121,11 +126,11 @@ export function Navbar() {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <Button asChild size="sm" className="bg-black text-white hover:bg-gray-800">
+            <Button asChild size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90">
               <Link href="/auth/login">Connect Wallet</Link>
             </Button>
           )}
-          <Button variant="outline" size="sm" className="border-gray-300 text-gray-900 hover:bg-gray-100">
+          <Button variant="outline" size="sm" className="border-border text-foreground hover:bg-muted">
             <Menu size={18} />
           </Button>
         </div>

@@ -18,10 +18,11 @@ import {
   Filter,
   BotIcon as Robot,
   X,
+  Trash2,
 } from "lucide-react"
-import { CreatePostDialog, type Post, type Comment } from "@/components/community/create-post-dialog"
-import { PostComments } from "@/components/community/post-comments"
-import { useAuth } from "@/components/auth/auth-context"
+import { CreatePostDialog, type Post } from "@/components/community/create-post-dialog"
+import { PostComments, type Comment } from "@/components/community/post-comments"
+import { useWalletAuth } from "@/components/auth/wallet-context"
 import { useNotifications } from "@/contexts/notification-context"
 import {
   AlertDialog,
@@ -34,115 +35,197 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { useToast } from "@/components/ui/use-toast"
+import { getRelativeTime } from "@/lib/utils/date-formatter"
+import { useRouter } from "next/navigation"
+import { SettingsService } from "@/lib/services/settings-service"
+import { NewsFeed } from "@/components/copytrading/news-feed"
+
+// Extend the Post type if needed
+type ExtendedPost = {
+  id: string;
+  author: string | { username: string; email: string; avatar: string | null };
+  handle: string;
+  avatar: string;
+  verified?: boolean;
+  isAI?: boolean;
+  following?: boolean;
+  time: string;
+  content: string;
+  likes: number;
+  comments: number;
+  shares: number;
+  accuracy?: number;
+  userLiked?: boolean;
+  userRetweeted?: boolean;
+  commentsList?: Comment[];
+  userId?: string;
+  walletAddress?: string;
+}
 
 export default function CommunityPage() {
-  const [posts, setPosts] = useState<Post[]>([])
+  const [posts, setPosts] = useState<ExtendedPost[]>([])
   const [topTraders, setTopTraders] = useState<any[]>([])
   const [topics, setTopics] = useState<any[]>([])
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState("trending")
+  const [activeTab, setActiveTab] = useState("latest")
   const [expandedPostId, setExpandedPostId] = useState<string | null>(null)
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
   const [sharePostId, setSharePostId] = useState<string | null>(null)
-  const { user } = useAuth()
+  const [userStats, setUserStats] = useState({
+    followingCount: 0,
+    followersCount: 0,
+    postsCount: 0
+  })
+  const [isLoading, setIsLoading] = useState(true)
+  const { user } = useWalletAuth()
   const { addNotification } = useNotifications()
+  const { toast } = useToast()
+  const router = useRouter()
+  const settingsService = new SettingsService()
+  const [profileData, setProfileData] = useState<any>(null)
+
+  // Load profile data
+  useEffect(() => {
+    const fetchProfile = async () => {
+      if (user?.address) {
+        try {
+          const profile = await settingsService.getProfile(user.address)
+          if (profile) {
+            setProfileData(profile)
+          }
+        } catch (error) {
+          console.error('Error fetching profile:', error)
+        }
+      }
+    }
+    fetchProfile()
+  }, [user?.address])
+
+  // Load posts
+  const fetchPosts = async () => {
+    setIsLoading(true)
+    try {
+      const response = await fetch(`/api/community/posts?tab=${activeTab}&walletAddress=${user?.address || ""}`)
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to fetch posts')
+      }
+      
+      const data = await response.json()
+      
+      // Process posts to ensure they have the right format
+      const processedPosts = data.posts?.map((post: any) => ({
+        id: post.id,
+        content: post.content,
+        imageUrl: post.imageUrl,
+        tags: post.tags,
+        isAiGenerated: post.isAiGenerated,
+        accuracy: post.accuracyPercentage,
+        createdAt: post.createdAt,
+        updatedAt: post.updatedAt,
+        walletAddress: post.walletAddress,
+        author: post.author,
+        handle: post.author?.username ? `@${post.author.username.toLowerCase().replace(/\s+/g, "")}` : null,
+        avatar: post.author?.avatar || "/placeholder.svg",
+        time: post.createdAt ? getRelativeTime(post.createdAt) : "Just now",
+        verified: false,
+        following: false,
+        likes: post.engagement?.likes || post.likes || 0,
+        comments: post.engagement?.comments || post.comments_count || 0,
+        shares: post.engagement?.shares || post.shares || 0,
+        userLiked: false,
+        userRetweeted: false,
+        commentsList: []
+      })) || []
+      
+      setPosts(processedPosts)
+      
+      // Load comments for all posts with comments
+      processedPosts.forEach(async (post: ExtendedPost) => {
+        if (post.comments > 0) {
+          await loadCommentsForPost(post.id)
+        }
+      })
+    } catch (error) {
+      console.error('Error fetching posts:', error)
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to load posts. Please try again.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Helper function to load comments for a specific post
+  const loadCommentsForPost = async (postId: string) => {
+    try {
+      const response = await fetch(`/api/community/comments?postId=${postId}&walletAddress=${user?.address || ""}`)
+      if (!response.ok) {
+        throw new Error('Failed to fetch comments')
+      }
+      
+      const comments = await response.json()
+      
+      // Update post with comments and correct count
+      setPosts((prevPosts) =>
+        prevPosts.map((p) =>
+          p.id === postId
+            ? { 
+                ...p, 
+                commentsList: comments,
+                comments: comments.length // Update the count to match actual comments
+              }
+            : p
+        )
+      )
+    } catch (error) {
+      console.error(`Error fetching comments for post ${postId}:`, error)
+    }
+  }
+
+  // Load user stats
+  const fetchUserStats = async () => {
+    if (!user?.address) return
+    
+    try {
+      // Get follow stats using wallet address
+      const response = await fetch(`/api/community/follow?walletAddress=${user.address}`)
+      if (!response.ok) {
+        throw new Error('Failed to fetch user stats')
+      }
+      const data = await response.json()
+      
+      // Get post count using wallet address
+      const postsResponse = await fetch(`/api/community/posts/count?walletAddress=${user.address}`)
+      if (postsResponse.ok) {
+        const postsData = await postsResponse.json()
+        console.log('Posts count data:', postsData)
+        setUserStats({
+          followingCount: data.followingCount || 0,
+          followersCount: data.followerCount || 0,
+          postsCount: postsData.count || 0
+        })
+      } else {
+        setUserStats({
+          followingCount: data.followingCount || 0,
+          followersCount: data.followerCount || 0,
+          postsCount: 0
+        })
+      }
+    } catch (error) {
+      console.error('Error fetching user stats:', error)
+    }
+  }
 
   // Load initial data
   useEffect(() => {
-    // In a real app, this would be an API call
-    const initialPosts: Post[] = [
-      {
-        id: "1",
-        author: "Alex Thompson",
-        handle: "@alexthompson",
-        avatar: "/placeholder.svg?height=40&width=40",
-        verified: true,
-        following: true,
-        time: "2h ago",
-        content:
-          "Just increased my $BTC position by 15%. Technical indicators suggest we might see a breakout above $45K in the next 48 hours. Keep an eye on the 4h chart.",
-        likes: 24,
-        comments: 7,
-        shares: 3,
-        accuracy: 92,
-        userLiked: false,
-        commentsList: [
-          {
-            id: "c1",
-            author: "Sarah Chen",
-            handle: "@sarahtrader",
-            avatar: "/placeholder.svg?height=40&width=40",
-            content: "Great analysis! I've been watching the same pattern. What indicators are you using specifically?",
-            time: "1h ago",
-            likes: 3,
-            userLiked: false,
-          },
-          {
-            id: "c2",
-            author: "Michael Rodriguez",
-            handle: "@cryptomike",
-            avatar: "/placeholder.svg?height=40&width=40",
-            content: "I'm seeing the same thing. RSI is looking good too.",
-            time: "30m ago",
-            likes: 1,
-            userLiked: false,
-          },
-        ],
-      },
-      {
-        id: "2",
-        author: "CryptoSage AI",
-        handle: "@cryptosage_ai",
-        avatar: "/placeholder.svg?height=40&width=40",
-        verified: true,
-        isAI: true,
-        following: true,
-        time: "4h ago",
-        content:
-          "ANALYSIS: $ETH showing bullish divergence on RSI. Volume profile indicates accumulation phase. Target: $2,550 with stop loss at $2,280. Confidence level: 78%",
-        likes: 56,
-        comments: 12,
-        shares: 18,
-        accuracy: 87,
-        userLiked: false,
-        commentsList: [],
-      },
-      {
-        id: "3",
-        author: "Sarah Chen",
-        handle: "@sarahtrader",
-        avatar: "/placeholder.svg?height=40&width=40",
-        verified: true,
-        following: false,
-        time: "6h ago",
-        content:
-          "My SOL trade from last week is up 22%! The ecosystem growth continues to impress. Looking to take partial profits at $140 and let the rest ride.",
-        likes: 56,
-        comments: 12,
-        shares: 18,
-        accuracy: 87,
-        userLiked: true,
-        commentsList: [],
-      },
-      {
-        id: "4",
-        author: "Michael Rodriguez",
-        handle: "@cryptomike",
-        avatar: "/placeholder.svg?height=40&width=40",
-        verified: false,
-        following: true,
-        time: "8h ago",
-        content:
-          "$AVAX showing strong momentum after the recent partnership announcement. Setting up for a potential run to $40. My entry was at $32.50 with stops at $30.",
-        likes: 31,
-        comments: 5,
-        shares: 2,
-        accuracy: 79,
-        userLiked: false,
-        commentsList: [],
-      },
-    ]
-
+    fetchPosts()
+    fetchUserStats()
+    
+    // Load initial top traders and topics
     const initialTopTraders = [
       {
         name: "Alex Thompson",
@@ -181,137 +264,474 @@ export default function CommunityPage() {
       { name: "Altcoins", posts: 210 },
     ]
 
-    setPosts(initialPosts)
     setTopTraders(initialTopTraders)
     setTopics(initialTopics)
   }, [])
 
+  // Refetch posts when tab changes
+  useEffect(() => {
+    fetchPosts()
+  }, [activeTab])
+
+  // Refetch user stats when user changes
+  useEffect(() => {
+    if (user?.address) {
+      fetchUserStats()
+    }
+  }, [user?.address])
+
   // Handle post creation
   const handlePostCreated = (newPost: Post) => {
-    setPosts((prevPosts) => [newPost, ...prevPosts])
+    // Get author name - handle both string and object formats
+    const authorName = typeof newPost.author === 'string' 
+      ? newPost.author 
+      : newPost.author?.username || 'Anonymous';
+      
+    // Convert Post to ExtendedPost
+    const extendedPost: ExtendedPost = {
+      id: newPost.id,
+      author: newPost.author,
+      handle: newPost.handle || `@${authorName.toLowerCase().replace(/\s+/g, "")}`,
+      avatar: newPost.avatar,
+      verified: false,
+      following: false,
+      time: newPost.time || "Just now",
+      content: newPost.content,
+      likes: newPost.likes,
+      comments: newPost.comments,
+      shares: newPost.shares || 0,
+      userLiked: false,
+      userRetweeted: false,
+      commentsList: [],
+      userId: newPost.userId,
+      walletAddress: newPost.walletAddress,
+    };
+    
+    setPosts((prevPosts) => [extendedPost, ...prevPosts]);
+    
+    // Fetch the latest post count
+    fetchUserStats();
+    
     addNotification({
       title: "Post Created",
       message: "Your post has been published to the community",
       type: "system",
-    })
+    });
   }
 
   // Handle like/unlike post
-  const handleLikePost = (postId: string) => {
-    setPosts((prevPosts) =>
-      prevPosts.map((post) => {
-        if (post.id === postId) {
-          const userLiked = !post.userLiked
-          return {
-            ...post,
-            likes: userLiked ? post.likes + 1 : post.likes - 1,
-            userLiked,
-          }
-        }
-        return post
-      }),
-    )
+  const handleLikePost = async (postId: string) => {
+    if (!user?.address) {
+      toast({
+        title: "Authentication required",
+        description: "Please sign in to like posts",
+        variant: "destructive",
+      })
+      return
+    }
+    
+    try {
+      // Find the current post state
+      const currentPost = posts.find(post => post.id === postId)
+      if (!currentPost) return
+
+      // Calculate the new like count
+      const currentLikes = currentPost.likes || 0
+      const newLikes = currentPost.userLiked ? currentLikes - 1 : currentLikes + 1
+
+      // Optimistically update UI
+      setPosts((prevPosts) =>
+        prevPosts.map((post) =>
+          post.id === postId
+            ? {
+                ...post,
+                likes: newLikes,
+                userLiked: !post.userLiked,
+              }
+            : post
+        )
+      )
+      
+      // Send API request
+      const response = await fetch('/api/community/likes', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          postId,
+          walletAddress: user.address 
+        }),
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to like post')
+      }
+      
+      const data = await response.json()
+      
+      // Update with actual count from server
+      setPosts((prevPosts) =>
+        prevPosts.map((post) =>
+          post.id === postId
+            ? {
+                ...post,
+                likes: data.count || newLikes,
+                userLiked: data.liked,
+              }
+            : post
+        )
+      )
+    } catch (error) {
+      console.error('Error liking post:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to like post. Please try again.',
+        variant: 'destructive',
+      })
+      
+      // Revert optimistic update
+      setPosts((prevPosts) =>
+        prevPosts.map((post) =>
+          post.id === postId
+            ? {
+                ...post,
+                likes: post.likes || 0,
+                userLiked: !post.userLiked,
+              }
+            : post
+        )
+      )
+    }
   }
 
   // Handle follow/unfollow user
-  const handleFollowUser = (postId: string) => {
-    setPosts((prevPosts) =>
-      prevPosts.map((post) => {
-        if (post.id === postId) {
-          const following = !post.following
-
-          // Add notification when following a user
-          if (following) {
-            addNotification({
-              title: `Following ${post.author}`,
-              message: `You are now following ${post.author}. You'll receive updates on their posts.`,
-              type: "system",
-            })
-          }
-
-          return {
-            ...post,
-            following,
-          }
-        }
-        return post
-      }),
-    )
+  const handleFollowUser = async (postId: string) => {
+    if (!user?.address) {
+      toast({
+        title: "Authentication required",
+        description: "Please connect your wallet to follow users",
+        variant: "destructive",
+      })
+      return
+    }
+    
+    // Find the post to get user wallet address
+    const post = posts.find(p => p.id === postId)
+    if (!post || !post.walletAddress) {
+      toast({
+        title: 'Error',
+        description: 'Cannot find user to follow',
+        variant: 'destructive',
+      })
+      return
+    }
+    
+    try {
+      // Optimistically update UI
+      setPosts((prevPosts) =>
+        prevPosts.map((p) =>
+          p.walletAddress === post.walletAddress
+            ? { ...p, following: !p.following }
+            : p
+        )
+      )
+      
+      // Send API request
+      const response = await fetch('/api/community/follow', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          followId: post.walletAddress,
+          followerAddress: user.address 
+        }),
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to follow user')
+      }
+      
+      const data = await response.json()
+      
+      // Update user stats
+      setUserStats(prev => ({
+        ...prev,
+        followingCount: data.followingCount || prev.followingCount,
+        followersCount: data.followerCount || prev.followersCount
+      }))
+      
+      // Notification
+      addNotification({
+        title: post.following ? "Unfollowed" : "Now Following",
+        message: post.following 
+          ? `You unfollowed ${typeof post.author === 'string' ? post.author : post.author?.username || 'Anonymous'}`
+          : `You are now following ${typeof post.author === 'string' ? post.author : post.author?.username || 'Anonymous'}`,
+        type: "system",
+      })
+    } catch (error) {
+      console.error('Error following user:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to follow user. Please try again.',
+        variant: 'destructive',
+      })
+      
+      // Revert optimistic update
+      setPosts((prevPosts) =>
+        prevPosts.map((p) =>
+          p.walletAddress === post.walletAddress
+            ? { ...p, following: !p.following }
+            : p
+        )
+      )
+    }
   }
 
-  // Handle follow/unfollow for top traders
-  const handleFollowTrader = (traderHandle: string) => {
-    setTopTraders((prevTraders) =>
-      prevTraders.map((trader) => {
-        if (trader.handle === traderHandle) {
-          const following = !trader.following
-
-          // Add notification when following a trader
-          if (following) {
-            addNotification({
-              title: `Following ${trader.name}`,
-              message: `You are now following ${trader.name}. You'll receive their trading signals.`,
-              type: "system",
-            })
-          }
-
-          return {
-            ...trader,
-            following,
-            followers: following ? trader.followers + 1 : trader.followers - 1,
-          }
-        }
-        return trader
-      }),
-    )
+  // Handle follow trader (from sidebar)
+  const handleFollowTrader = async (traderHandle: string) => {
+    if (!user?.address) {
+      toast({
+        title: "Authentication required",
+        description: "Please connect your wallet to follow traders",
+        variant: "destructive",
+      })
+      return
+    }
+    
+    // Find the trader
+    const trader = topTraders.find(t => t.handle === traderHandle)
+    if (!trader || !trader.walletAddress) {
+      toast({
+        title: 'Error',
+        description: 'Cannot find trader to follow',
+        variant: 'destructive',
+      })
+      return
+    }
+    
+    try {
+      // Optimistically update UI
+      setTopTraders((prevTraders) =>
+        prevTraders.map((t) =>
+          t.handle === traderHandle
+            ? { ...t, following: !t.following }
+            : t
+        )
+      )
+      
+      // Send API request
+      const response = await fetch('/api/community/follow', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          followId: trader.walletAddress,
+          followerAddress: user.address 
+        }),
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to follow trader')
+      }
+      
+      const data = await response.json()
+      
+      // Update user stats
+      setUserStats(prev => ({
+        ...prev,
+        followingCount: data.followingCount || prev.followingCount
+      }))
+      
+      // Notification
+      addNotification({
+        title: trader.following ? "Unfollowed" : "Now Following",
+        message: trader.following 
+          ? `You unfollowed ${trader.name}`
+          : `You are now following ${trader.name}`,
+        type: "system",
+      })
+    } catch (error) {
+      console.error('Error following trader:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to follow trader. Please try again.',
+        variant: 'destructive',
+      })
+      
+      // Revert optimistic update
+      setTopTraders((prevTraders) =>
+        prevTraders.map((t) =>
+          t.handle === traderHandle
+            ? { ...t, following: !t.following }
+            : t
+        )
+      )
+    }
   }
 
-  // Handle comment expansion
-  const handleExpandComments = (postId: string) => {
-    setExpandedPostId(expandedPostId === postId ? null : postId)
+  // Handle expand comments
+  const handleExpandComments = async (postId: string) => {
+    // If already expanded, collapse
+    if (expandedPostId === postId) {
+      setExpandedPostId(null)
+      return
+    }
+    
+    setExpandedPostId(postId)
+    
+    // Always fetch comments when expanding
+    await loadCommentsForPost(postId)
   }
 
-  // Handle adding a comment
-  const handleAddComment = (postId: string, comment: Comment) => {
-    setPosts((prevPosts) =>
-      prevPosts.map((post) => {
-        if (post.id === postId) {
-          const updatedCommentsList = [...(post.commentsList || []), comment]
-          return {
-            ...post,
-            comments: post.comments + 1,
-            commentsList: updatedCommentsList,
-          }
-        }
-        return post
-      }),
-    )
-  }
-
-  // Handle liking a comment
-  const handleLikeComment = (postId: string, commentId: string) => {
-    setPosts((prevPosts) =>
-      prevPosts.map((post) => {
-        if (post.id === postId && post.commentsList) {
-          const updatedComments = post.commentsList.map((comment) => {
-            if (comment.id === commentId) {
-              const userLiked = !comment.userLiked
-              return {
-                ...comment,
-                likes: userLiked ? comment.likes + 1 : comment.likes - 1,
-                userLiked,
-              }
+  // Handle add comment
+  const handleAddComment = async (postId: string, comment: Comment) => {
+    if (!user?.address) {
+      toast({
+        title: "Authentication required",
+        description: "Please sign in to comment",
+        variant: "destructive",
+      })
+      return
+    }
+    
+    try {
+      // Send API request
+      const response = await fetch('/api/community/comments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          postId, 
+          content: comment.content,
+          walletAddress: user.address
+        }),
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to add comment')
+      }
+      
+      const newComment = await response.json()
+      
+      // Update post with new comment
+      setPosts((prevPosts) =>
+        prevPosts.map((post) => {
+          if (post.id === postId) {
+            const updatedCommentsList = [...(post.commentsList || []), newComment]
+            return {
+              ...post,
+              commentsList: updatedCommentsList,
+              comments: updatedCommentsList.length
             }
-            return comment
-          })
-          return {
-            ...post,
-            commentsList: updatedComments,
           }
-        }
-        return post
-      }),
-    )
+          return post
+        })
+      )
+    } catch (error) {
+      console.error('Error adding comment:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to add comment. Please try again.',
+        variant: 'destructive',
+      })
+    }
+  }
+
+  // Handle like comment
+  const handleLikeComment = async (postId: string, commentId: string) => {
+    if (!user?.address) {
+      toast({
+        title: "Authentication required",
+        description: "Please sign in to like comments",
+        variant: "destructive",
+      })
+      return
+    }
+    
+    try {
+      // Find the post and comment
+      const post = posts.find(p => p.id === postId)
+      if (!post?.commentsList) return
+      
+      const comment = post.commentsList.find(c => c.id === commentId)
+      if (!comment) return
+      
+      // Optimistically update UI
+      setPosts((prevPosts) =>
+        prevPosts.map((p) => {
+          if (p.id !== postId) return p
+          
+          const updatedComments = p.commentsList?.map(c => 
+            c.id === commentId
+              ? {
+                  ...c,
+                  likes: c.userLiked ? c.likes - 1 : c.likes + 1,
+                  userLiked: !c.userLiked,
+                }
+              : c
+          ) || []
+          
+          return {
+            ...p,
+            commentsList: updatedComments
+          }
+        })
+      )
+      
+      // Send API request
+      const response = await fetch('/api/community/likes', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          commentId,
+          walletAddress: user.address
+        }),
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to like comment')
+      }
+      
+      const data = await response.json()
+      
+      // Update with actual count from server
+      setPosts((prevPosts) =>
+        prevPosts.map((p) => {
+          if (p.id !== postId) return p
+          
+          const updatedComments = p.commentsList?.map(c => 
+            c.id === commentId
+              ? {
+                  ...c,
+                  likes: data.count,
+                  userLiked: data.liked,
+                }
+              : c
+          ) || []
+          
+          return {
+            ...p,
+            commentsList: updatedComments
+          }
+        })
+      )
+    } catch (error) {
+      console.error('Error liking comment:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to like comment. Please try again.',
+        variant: 'destructive',
+      })
+      
+      // Revert optimistic update (complex, so we'll just refetch comments)
+      handleExpandComments(postId)
+    }
   }
 
   // Handle repost
@@ -320,15 +740,43 @@ export default function CommunityPage() {
       const postToRepost = prevPosts.find((post) => post.id === postId)
       if (!postToRepost) return prevPosts
 
-      // Update the original post's share count
-      const updatedPosts = prevPosts.map((post) => (post.id === postId ? { ...post, shares: post.shares + 1 } : post))
+      // Update the original post's share count and retweet state
+      const updatedPosts = prevPosts.map((post) => 
+        post.id === postId 
+          ? { 
+              ...post, 
+              shares: post.shares + 1,
+              userRetweeted: !post.userRetweeted
+            } 
+          : post
+      )
+
+      // Get user display info with fallbacks
+      const getDisplayName = () => {
+        if (user?.name) return user.name;
+        if (user?.address) {
+          const shortAddress = `${user.address.substring(0, 4)}...${user.address.substring(user.address.length - 4)}`;
+          return `User ${shortAddress}`;
+        }
+        return "Anonymous User";
+      };
+      
+      const getDisplayHandle = () => {
+        if (user?.name) return `@${user.name.toLowerCase().replace(/\s+/g, "")}`;
+        if (user?.address) return `@${user.address.substring(0, 8)}`;
+        return "@anonymous";
+      };
+      
+      const displayName = getDisplayName();
+      const displayHandle = getDisplayHandle();
+      const userAvatar = user?.avatar || "/placeholder.svg?height=40&width=40";
 
       // Create a new post as a repost
-      const repost: Post = {
+      const repost: ExtendedPost = {
         id: `repost-${Date.now()}`,
-        author: user?.name || "Anonymous",
-        handle: `@${user?.name?.toLowerCase().replace(/\s+/g, "") || "anonymous"}`,
-        avatar: user?.avatar || "/placeholder.svg?height=40&width=40",
+        author: displayName,
+        handle: displayHandle,
+        avatar: userAvatar,
         verified: false,
         following: false,
         time: "Just now",
@@ -337,7 +785,10 @@ export default function CommunityPage() {
         comments: 0,
         shares: 0,
         userLiked: false,
+        userRetweeted: false,
         commentsList: [],
+        userId: postToRepost.userId,
+        walletAddress: postToRepost.walletAddress,
       }
 
       addNotification({
@@ -373,6 +824,86 @@ export default function CommunityPage() {
     setSharePostId(null)
   }
 
+  const handleDeletePost = async (postId: string) => {
+    if (!user?.address) {
+      toast({
+        title: "Error",
+        description: "Please connect your wallet first",
+        variant: "destructive"
+      })
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/community/posts/${postId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId: user.address }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to delete post')
+      }
+
+      setPosts(posts.filter(post => post.id !== postId))
+      toast({
+        title: "Post Deleted",
+        description: "Your post has been deleted successfully",
+      })
+    } catch (error) {
+      console.error('Error deleting post:', error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : 'Failed to delete post',
+        variant: "destructive"
+      })
+    }
+  }
+
+  const handleDeleteComment = async (postId: string, commentId: string) => {
+    if (!user?.address) {
+      toast({
+        title: "Error",
+        description: "Please connect your wallet first",
+        variant: "destructive"
+      })
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/community/posts/${postId}/comments/${commentId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId: user.address }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to delete comment')
+      }
+
+      setPosts(posts.map(post => {
+        if (post.id === postId) {
+          return {
+            ...post,
+            comments: post.comments.filter(comment => comment.id !== commentId)
+          }
+        }
+        return post
+      }))
+    } catch (error) {
+      console.error('Error deleting comment:', error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : 'Failed to delete comment',
+        variant: "destructive"
+      })
+    }
+  }
+
   return (
     <>
       <div className="flex justify-between items-center mb-6">
@@ -382,36 +913,33 @@ export default function CommunityPage() {
         </div>
 
         <div className="flex items-center space-x-3">
-          <div className="relative hidden md:block">
+          <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
             <Input
               type="text"
               placeholder="Search community..."
-              className="pl-10 pr-4 py-2 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-gray-400 w-64"
+              className="pl-10 pr-4 py-2 border border-gray-200 dark:border-gray-700 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-gray-400 w-64"
             />
           </div>
-          <Button className="bg-black text-white hover:bg-gray-800" onClick={() => setIsCreatePostOpen(true)}>
-            <MessageSquare size={16} className="mr-2" /> New Post
-          </Button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
-          <Card className="bg-white border-gray-200">
+          <Card className="bg-white dark:bg-card border-gray-200 dark:border-border">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-xl">Feed</CardTitle>
-                <Tabs defaultValue="trending" value={activeTab} onValueChange={setActiveTab}>
-                  <TabsList className="bg-gray-100 border border-gray-200">
-                    <TabsTrigger value="trending" className="data-[state=active]:bg-white">
+                <Tabs defaultValue="latest" value={activeTab} onValueChange={setActiveTab}>
+                  <TabsList className="bg-gray-100 dark:bg-muted border border-gray-200 dark:border-gray-800">
+                    <TabsTrigger value="latest" className="data-[state=active]:bg-white dark:data-[state=active]:bg-card">
+                      Latest
+                    </TabsTrigger>
+                    <TabsTrigger value="trending" className="data-[state=active]:bg-white dark:data-[state=active]:bg-card">
                       Trending
                     </TabsTrigger>
-                    <TabsTrigger value="following" className="data-[state=active]:bg-white">
+                    <TabsTrigger value="following" className="data-[state=active]:bg-white dark:data-[state=active]:bg-card">
                       Following
-                    </TabsTrigger>
-                    <TabsTrigger value="latest" className="data-[state=active]:bg-white">
-                      Latest
                     </TabsTrigger>
                   </TabsList>
                 </Tabs>
@@ -419,111 +947,117 @@ export default function CommunityPage() {
             </CardHeader>
             <CardContent className="space-y-4 pt-4">
               <div className="flex space-x-2 overflow-x-auto pb-2">
-                <Button variant="outline" size="sm" className="border-gray-200 rounded-full">
+                <Button variant="outline" size="sm" className="border-gray-200 dark:border-gray-800 rounded-full">
                   All
                 </Button>
-                <Button variant="outline" size="sm" className="border-gray-200 rounded-full">
+                <Button variant="outline" size="sm" className="border-gray-200 dark:border-gray-800 rounded-full">
                   Bitcoin
                 </Button>
-                <Button variant="outline" size="sm" className="border-gray-200 rounded-full">
+                <Button variant="outline" size="sm" className="border-gray-200 dark:border-gray-800 rounded-full">
                   Ethereum
                 </Button>
-                <Button variant="outline" size="sm" className="border-gray-200 rounded-full">
+                <Button variant="outline" size="sm" className="border-gray-200 dark:border-gray-800 rounded-full">
                   Solana
                 </Button>
-                <Button variant="outline" size="sm" className="border-gray-200 rounded-full">
+                <Button variant="outline" size="sm" className="border-gray-200 dark:border-gray-800 rounded-full">
                   DeFi
                 </Button>
-                <Button variant="outline" size="sm" className="border-gray-200 rounded-full">
+                <Button variant="outline" size="sm" className="border-gray-200 dark:border-gray-800 rounded-full">
                   NFTs
                 </Button>
-                <Button variant="outline" size="sm" className="border-gray-200 rounded-full">
+                <Button variant="outline" size="sm" className="border-gray-200 dark:border-gray-800 rounded-full">
                   Altcoins
                 </Button>
               </div>
 
+              {/* Post creation trigger at the top */}
+              <div 
+                className="flex items-center gap-4 border border-gray-200 dark:border-gray-800 rounded-lg p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
+                onClick={() => setIsCreatePostOpen(true)}
+              >
+                {user ? (
+                  <Avatar>
+                    <AvatarImage 
+                      src={user.avatar || "/placeholder.svg"} 
+                      alt={user.name || "User"} 
+                    />
+                    <AvatarFallback>
+                      {user.name?.charAt(0)?.toUpperCase() || user.address?.charAt(0)?.toUpperCase() || "U"}
+                    </AvatarFallback>
+                  </Avatar>
+                ) : (
+                  <Avatar>
+                    <AvatarImage src="/placeholder.svg" alt="User" />
+                    <AvatarFallback>U</AvatarFallback>
+                  </Avatar>
+                )}
+                <span className="text-gray-500 dark:text-gray-400">What's on your mind?</span>
+              </div>
+
               <div className="space-y-4">
                 {posts.map((post) => (
-                  <Card key={post.id} className="bg-gray-50 border-gray-200">
+                  <Card key={post.id} className="bg-gray-50 dark:bg-card border-gray-200 dark:border-border">
                     <CardContent className="p-4">
-                      <div className="flex items-start space-x-4">
+                      <div className="flex items-start space-x-3">
                         <Avatar>
-                          <AvatarImage src={post.avatar || "/placeholder.svg"} alt={post.author} />
-                          <AvatarFallback>{post.author.charAt(0)}</AvatarFallback>
+                          <AvatarImage 
+                            src={typeof post.author === 'string' ? post.avatar : post.author.avatar || undefined} 
+                            alt={typeof post.author === 'string' ? post.author : post.author.username} 
+                          />
+                          <AvatarFallback>
+                            {typeof post.author === 'string' 
+                              ? post.author.charAt(0).toUpperCase() 
+                              : post.author.username.charAt(0).toUpperCase()}
+                          </AvatarFallback>
                         </Avatar>
                         <div className="flex-1">
                           <div className="flex items-center justify-between">
                             <div>
-                              <div className="flex items-center">
-                                <p className="font-medium">{post.author}</p>
-                                {post.verified && (
-                                  <Badge variant="outline" className="ml-2 border-blue-200 text-blue-600 bg-blue-50">
-                                    Verified
-                                  </Badge>
-                                )}
-                                {post.isAI && (
-                                  <Badge variant="outline" className="ml-2 border-gray-300 text-gray-600">
-                                    <Robot size={12} className="mr-1" /> AI
-                                  </Badge>
-                                )}
-                              </div>
-                              <p className="text-xs text-gray-500">
-                                {post.handle} • {post.time}
-                              </p>
+                              <h3 className="font-semibold">
+                                {typeof post.author === 'string' ? post.author : post.author.username}
+                              </h3>
+                              <p className="text-sm text-gray-500">{post.handle}</p>
                             </div>
-                            <div className="flex items-center">
-                              {post.accuracy && (
-                                <Badge className="mr-2 bg-gray-100 text-gray-600 border-gray-200">
-                                  {post.accuracy}% Accuracy
-                                </Badge>
-                              )}
+                            {post.walletAddress === user?.address && (
                               <Button
-                                variant="outline"
+                                variant="ghost"
                                 size="sm"
-                                className={`h-8 ${post.following ? "border-gray-300 bg-gray-100" : "border-gray-200"}`}
-                                onClick={() => handleFollowUser(post.id)}
+                                className="text-red-500 hover:text-red-700"
+                                onClick={() => handleDeletePost(post.id)}
                               >
-                                {post.following ? (
-                                  <>
-                                    <UserCheck size={14} className="mr-1" /> Following
-                                  </>
-                                ) : (
-                                  <>
-                                    <UserPlus size={14} className="mr-1" /> Follow
-                                  </>
-                                )}
+                                <Trash2 size={16} />
                               </Button>
-                            </div>
+                            )}
                           </div>
-                          <p className="mt-2 text-gray-700">{post.content}</p>
+                          <p className="mt-2 text-gray-700 dark:text-gray-300">{post.content}</p>
                           <div className="mt-4 flex space-x-4">
                             <Button
                               variant="ghost"
                               size="sm"
-                              className={`${post.userLiked ? "text-blue-600" : "text-gray-500"} hover:text-gray-900`}
+                              className={`${post.userLiked ? "text-red-500 hover:text-red-600" : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"}`}
                               onClick={() => handleLikePost(post.id)}
                             >
-                              <ThumbsUp size={16} className="mr-1" /> {post.likes}
+                              <ThumbsUp size={16} className={`mr-1 ${post.userLiked ? "fill-red-500" : ""}`} /> {Number(post.likes || 0)}
                             </Button>
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="text-gray-500 hover:text-gray-900"
+                              className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
                               onClick={() => handleExpandComments(post.id)}
                             >
-                              <MessageSquare size={16} className="mr-1" /> {post.comments}
+                              <MessageSquare size={16} className="mr-1" /> {Number(post.comments || 0)}
                             </Button>
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="text-gray-500 hover:text-gray-900"
+                              className={`${post.userRetweeted ? "text-red-500 hover:text-red-600" : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"}`}
                               onClick={() => handleRepost(post.id)}
                             >
-                              <Repeat2 size={16} className="mr-1" /> {post.shares}
+                              <Repeat2 size={16} className={`mr-1 ${post.userRetweeted ? "fill-red-500" : ""}`} /> {Number(post.shares || 0)}
                             </Button>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm" className="text-gray-500 hover:text-gray-900">
+                                <Button variant="ghost" size="sm" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200">
                                   <Share2 size={16} />
                                 </Button>
                               </DropdownMenuTrigger>
@@ -541,6 +1075,9 @@ export default function CommunityPage() {
                               comments={post.commentsList || []}
                               onAddComment={handleAddComment}
                               onLikeComment={handleLikeComment}
+                              onDeleteComment={handleDeleteComment}
+                              currentUserAddress={user?.address}
+                              userProfile={profileData}
                             />
                           )}
                         </div>
@@ -550,7 +1087,7 @@ export default function CommunityPage() {
                 ))}
               </div>
 
-              <Button variant="outline" className="w-full border-gray-200 hover:bg-gray-100">
+              <Button variant="outline" className="w-full border-gray-200 dark:border-gray-800 hover:bg-gray-100 dark:hover:bg-gray-800">
                 Load More
               </Button>
             </CardContent>
@@ -558,86 +1095,60 @@ export default function CommunityPage() {
         </div>
 
         <div className="space-y-6">
-          <Card className="bg-white border-gray-200">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">Top Traders</CardTitle>
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                  <Filter size={14} />
+          {/* User Profile Card */}
+          <Card className="bg-white dark:bg-card border-gray-200 dark:border-border">
+            <CardContent className="p-6">
+              <div className="flex flex-col items-center text-center">
+                <Avatar className="h-20 w-20 mb-3">
+                  <AvatarImage 
+                    src={user?.avatar || "/placeholder.svg"} 
+                    alt={user?.name || "User"} 
+                  />
+                  <AvatarFallback className="text-xl">
+                    {user?.name?.charAt(0)?.toUpperCase() || user?.address?.charAt(0)?.toUpperCase() || "U"}
+                  </AvatarFallback>
+                </Avatar>
+                
+                <h3 className="font-semibold text-lg mb-1">
+                  {profileData?.username || user?.name || (user?.address ? `${user.address.substring(0, 4)}...${user.address.substring(user.address.length - 4)}` : "Anonymous User")}
+                </h3>
+                
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                  {profileData?.username ? `@${profileData.username}` : (user?.address ? `${user.address.substring(0, 6)}...${user.address.substring(user.address.length - 4)}` : "@anonymous")}
+                </p>
+                
+                <div className="flex items-center justify-center w-full mb-4">
+                  <div className="flex flex-col items-center px-4 border-r border-gray-200 dark:border-gray-700">
+                    <span className="font-semibold">{userStats.followingCount.toLocaleString()}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">Following</span>
+                  </div>
+                  <div className="flex flex-col items-center px-4 border-r border-gray-200 dark:border-gray-700">
+                    <span className="font-semibold">{userStats.followersCount.toLocaleString()}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">Followers</span>
+                  </div>
+                  <div className="flex flex-col items-center px-4">
+                    <span className="font-semibold">{userStats.postsCount.toLocaleString()}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">Posts</span>
+                  </div>
+                </div>
+                
+                <Button size="sm" variant="outline" className="w-full" onClick={() => router.push("/dashboard/settings?tab=profile")}>
+                  Edit Profile
                 </Button>
               </div>
-            </CardHeader>
-            <CardContent className="pt-2">
-              <div className="space-y-4">
-                {topTraders.map((trader, index) => (
-                  <div key={index} className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <Avatar className="h-10 w-10">
-                        <AvatarImage src={trader.avatar || "/placeholder.svg"} alt={trader.name} />
-                        <AvatarFallback>{trader.name.charAt(0)}</AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <div className="flex items-center">
-                          <p className="font-medium text-sm">{trader.name}</p>
-                          {trader.verified && (
-                            <Badge variant="outline" className="ml-2 border-blue-200 text-blue-600 bg-blue-50 text-xs">
-                              ✓
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="text-xs text-gray-500">{trader.handle}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium text-green-600">{trader.roi}</p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className={`h-7 text-xs mt-1 ${
-                          trader.following ? "border-gray-300 bg-gray-100" : "border-gray-200"
-                        }`}
-                        onClick={() => handleFollowTrader(trader.handle)}
-                      >
-                        {trader.following ? (
-                          <>
-                            <UserCheck size={12} className="mr-1" /> Following
-                          </>
-                        ) : (
-                          <>
-                            <UserPlus size={12} className="mr-1" /> Follow
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <Button variant="ghost" size="sm" className="w-full mt-2 text-xs">
-                View All Traders
-              </Button>
             </CardContent>
           </Card>
 
-          <Card className="bg-white border-gray-200">
+          <Card className="bg-white dark:bg-card border-gray-200">
             <CardHeader className="pb-2">
-              <CardTitle className="text-lg">Trending Topics</CardTitle>
+              <CardTitle className="text-lg"></CardTitle>
             </CardHeader>
             <CardContent className="pt-2">
-              <div className="space-y-3">
-                {topics.map((topic, index) => (
-                  <div key={index} className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <div className="w-1 h-6 bg-gray-300 rounded-full"></div>
-                      <p className="font-medium text-sm">#{topic.name}</p>
-                    </div>
-                    <p className="text-xs text-gray-500">{topic.posts} posts</p>
-                  </div>
-                ))}
-              </div>
+              <NewsFeed />
             </CardContent>
           </Card>
 
-          <Card className="bg-white border-gray-200">
+          <Card className="bg-white dark:bg-card border-gray-200 dark:border-border">
             <CardHeader className="pb-2">
               <CardTitle className="text-lg">Community Guidelines</CardTitle>
             </CardHeader>
@@ -658,7 +1169,11 @@ export default function CommunityPage() {
       </div>
 
       {/* Create Post Dialog */}
-      <CreatePostDialog open={isCreatePostOpen} onOpenChange={setIsCreatePostOpen} onPostCreated={handlePostCreated} />
+      <CreatePostDialog 
+        open={isCreatePostOpen} 
+        onOpenChange={setIsCreatePostOpen} 
+        onPostCreated={handlePostCreated} 
+      />
 
       {/* Share Dialog */}
       <AlertDialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
@@ -676,7 +1191,7 @@ export default function CommunityPage() {
             </Button>
             <Button variant="outline" className="justify-start">
               <svg className="mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path d="M24 12c0-6.627-5.373-12-12-12S0 5.373 0 12s5.373 12 12 12 12-5.373 12-12zm-6.465-3.192c.37 0 .707.12.98.344.273.227.42.518.42.816 0 .3-.147.59-.42.812-.273.227-.61.344-.98.344-.37 0-.707-.117-.98-.344-.273-.223-.42-.512-.42-.812 0-.298.147-.59.42-.816.273-.227.61-.344.98-.344zm-7.07 0c.37 0 .707.12.98.344.273.227.42.518.42.816 0 .3-.147.59-.42.812-.273.227-.61.344-.98.344-.37 0-.707-.117-.98-.344-.273-.223-.42-.512-.42-.812 0-.298.147-.59.42-.816.273-.227.61-.344.98-.344zM12 20.5c-3.84 0-7.18-1.98-9.14-4.93l.16-.27c.54-.9 1.84-1.5 3.24-1.5.56 0 1.11.09 1.6.27.49.18.9.42 1.2.74.14.15.27.15.41 0 .3-.32.71-.56 1.2-.74.49-.18 1.03-.27 1.59-.27 1.4 0 2.7.6 3.24 1.5.06.09.11.18.16.27-1.96 2.95-5.3 4.93-9.14 4.93z" />
+                <path d="M24 12c0-6.627-5.373-12-12-12S0 5.373 0 12s5.373 12 12 12 12-5.373 12-12zm-6.465-3.192c.37 0 .707.12.98.344.273.227.42.518.42.816 0 .3-.147.59-.42.812-.273.227-.61.344-.98.344-.37 0-.707-.117-.98-.344-.273-.223-.42-.512-.42-.812 0-.298.147-.59.42-.816.273-.227.61-.344.98-.344zm-7.07 0c.37 0 .707.12.98.344.273.227.42.518.42.816 0 .3-.147.59-.42.812-.273.227-.61.344-.98.344-.37 0-.707-.117-.98-.344-.273-.223-.42-.512-.42-.812 0-.298.147-.59.42-.816.273-.227.61-.344.98-.344zM12 20.5c-3.84 0-7.18-1.98-9.14-4.93l.16-.27c.54-.9 1.84-1.5 3.24-1.5.56 0 1.11.09 1.6.27.49.18.9.42 1.2.74.14.15.27.15.41 0 .3-.32.71-.56 1.2-.74.49-.18 1.03-.27 1.59-.27 1.4 0 2.7.6 3.24 1.5.06.09.11.18.16.27-1.96 2.95-5.3 4.93-9.14 4.93-9.14 4.93z" />
               </svg>
               Share to Telegram
             </Button>

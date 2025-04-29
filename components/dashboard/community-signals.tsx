@@ -55,19 +55,19 @@ export function CommunitySignals() {
   ]
 
   return (
-    <Card className="border-gray-200">
+    <Card className="border-border">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg font-semibold">Community Signals</CardTitle>
           <Tabs defaultValue="trending">
-            <TabsList className="bg-gray-100 border border-gray-200">
-              <TabsTrigger value="trending" className="data-[state=active]:bg-white">
+            <TabsList className="bg-muted border border-border">
+              <TabsTrigger value="trending" className="data-[state=active]:bg-background">
                 Trending
               </TabsTrigger>
-              <TabsTrigger value="following" className="data-[state=active]:bg-white">
+              <TabsTrigger value="following" className="data-[state=active]:bg-background">
                 Following
               </TabsTrigger>
-              <TabsTrigger value="latest" className="data-[state=active]:bg-white">
+              <TabsTrigger value="latest" className="data-[state=active]:bg-background">
                 Latest
               </TabsTrigger>
             </TabsList>
@@ -76,7 +76,7 @@ export function CommunitySignals() {
       </CardHeader>
       <CardContent className="space-y-4">
         {posts.map((post) => (
-          <Card key={post.id} className="bg-gray-50 border-gray-200">
+          <Card key={post.id} className="bg-card border-border">
             <CardContent className="p-4">
               <div className="flex items-start space-x-4">
                 <Avatar>
@@ -89,23 +89,23 @@ export function CommunitySignals() {
                       <div className="flex items-center">
                         <p className="font-medium">{post.author}</p>
                         {post.verified && (
-                          <Badge variant="outline" className="ml-2 border-blue-200 text-blue-600 bg-blue-50">
+                          <Badge variant="outline" className="ml-2 border-blue-200 text-blue-600 bg-blue-50 dark:bg-blue-500/20">
                             Verified
                           </Badge>
                         )}
                       </div>
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-muted-foreground">
                         {post.handle} • {post.time}
                       </p>
                     </div>
                     <div className="flex items-center">
-                      <Badge className="mr-2 bg-gray-100 text-gray-600 border-gray-200">
+                      <Badge className="mr-2 bg-muted text-muted-foreground border-border">
                         {post.accuracy}% Accuracy
                       </Badge>
                       <Button
                         variant="outline"
                         size="sm"
-                        className={`h-8 ${post.following ? "border-gray-300 bg-gray-100" : "border-gray-200"}`}
+                        className={`h-8 ${post.following ? "border-border bg-muted" : "border-border"}`}
                       >
                         {post.following ? (
                           <>
@@ -119,18 +119,18 @@ export function CommunitySignals() {
                       </Button>
                     </div>
                   </div>
-                  <p className="mt-2 text-gray-700">{post.content}</p>
+                  <p className="mt-2 text-foreground">{post.content}</p>
                   <div className="mt-4 flex space-x-4">
-                    <Button variant="ghost" size="sm" className="text-gray-500 hover:text-gray-900">
+                    <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
                       <ThumbsUp size={16} className="mr-1" /> {post.likes}
                     </Button>
-                    <Button variant="ghost" size="sm" className="text-gray-500 hover:text-gray-900">
+                    <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
                       <MessageSquare size={16} className="mr-1" /> {post.comments}
                     </Button>
-                    <Button variant="ghost" size="sm" className="text-gray-500 hover:text-gray-900">
+                    <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
                       <Repeat2 size={16} className="mr-1" /> {post.shares}
                     </Button>
-                    <Button variant="ghost" size="sm" className="text-gray-500 hover:text-gray-900">
+                    <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
                       <Share2 size={16} />
                     </Button>
                   </div>
@@ -139,7 +139,7 @@ export function CommunitySignals() {
             </CardContent>
           </Card>
         ))}
-        <Button variant="outline" className="w-full border-gray-200 hover:bg-gray-100">
+        <Button variant="outline" className="w-full border-border hover:bg-muted">
           Load More
         </Button>
       </CardContent>

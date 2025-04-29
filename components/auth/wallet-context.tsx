@@ -9,9 +9,13 @@ type WalletData = {
   chain: string
 }
 
-type User = {
+export interface User {
   address: string
   wallet?: WalletData
+  // Add these fields to make the User type compatible with our needs
+  id?: string
+  name?: string
+  avatar?: string
 }
 
 type WalletContextType = {

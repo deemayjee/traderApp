@@ -7,7 +7,7 @@ export function HeroSection() {
     <section className="relative py-20 md:py-32 overflow-hidden">
       {/* Background dots effect */}
       <div className="absolute inset-0 z-0">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-gray-50 to-white"></div>
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-gray-50 to-white dark:from-gray-900 dark:to-gray-950"></div>
         {Array.from({ length: 100 }).map((_, i) => (
           <div
             key={i}

@@ -55,11 +55,11 @@ export function DashboardSidebar() {
   ]
 
   return (
-    <div className="flex flex-col h-screen border-r bg-white">
+    <div className="flex flex-col h-screen border-r border-border bg-background">
       <div className="p-6">
         <Link href="/" className="flex items-center mb-8">
           <span className="text-xl font-bold tracking-tighter">
-            Pally<span className="text-gray-500">Traders</span>
+            Pally<span className="text-muted-foreground">Traders</span>
           </span>
         </Link>
         <div className="flex items-center gap-3 mb-2">
@@ -69,7 +69,7 @@ export function DashboardSidebar() {
           </Avatar>
           <div>
             <p className="text-sm font-medium">Wallet</p>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               {user?.address 
                 ? `${user.address.substring(0, 4)}...${user.address.substring(user.address.length - 4)}` 
                 : 'Connected'}
@@ -81,7 +81,7 @@ export function DashboardSidebar() {
           onClick={() => logout()}
           variant="outline"
           size="sm"
-          className="w-full border-gray-200 text-gray-500 hover:bg-gray-100 hover:text-gray-900 justify-start mb-6"
+          className="w-full border-border text-muted-foreground hover:bg-muted hover:text-foreground justify-start mb-6"
         >
           <LogOut className="mr-2 h-4 w-4" />
           Disconnect Wallet
@@ -93,8 +93,8 @@ export function DashboardSidebar() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-gray-500 transition-all hover:text-gray-900",
-                pathname === item.href ? "bg-gray-100 text-gray-900" : ""
+                "flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-foreground",
+                pathname === item.href ? "bg-muted text-foreground" : ""
               )}
             >
               {item.icon}

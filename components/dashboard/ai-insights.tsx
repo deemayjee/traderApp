@@ -74,7 +74,7 @@ export function AIInsights() {
   }
 
   return (
-    <Card className="border-gray-200">
+    <Card className="border-border">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <CardTitle className="text-lg font-semibold">AI Insights</CardTitle>
         <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
@@ -83,7 +83,7 @@ export function AIInsights() {
       </CardHeader>
       <CardContent className="space-y-4">
         {insights.map((insight) => (
-          <Card key={insight.id} className="bg-gray-50 border-gray-200">
+          <Card key={insight.id} className="bg-card border-border">
             <CardContent className="p-4">
               <div className="flex items-start justify-between mb-2">
                 <div className="flex items-center gap-3">
@@ -93,14 +93,14 @@ export function AIInsights() {
                       {insight.type.charAt(0).toUpperCase() + insight.type.slice(1)} {insight.asset}{" "}
                       {insight.signalType}
                     </h3>
-                    <p className="text-sm text-gray-600">{insight.description}</p>
+                    <p className="text-sm text-muted-foreground">{insight.description}</p>
                   </div>
                 </div>
-                <div className="bg-gray-100 px-3 py-1 rounded-full text-sm">{insight.confidence}% conf.</div>
+                <div className="bg-muted px-3 py-1 rounded-full text-sm">{insight.confidence}% conf.</div>
               </div>
               <div className="mt-4">
                 <div className="flex justify-between text-sm mb-1">
-                  <span className="text-gray-600">Historical Accuracy</span>
+                  <span className="text-muted-foreground">Historical Accuracy</span>
                   <span className="font-medium">{insight.accuracy}%</span>
                 </div>
               </div>
@@ -109,7 +109,7 @@ export function AIInsights() {
         ))}
 
         <Link href="/ai-agents" passHref>
-          <Button variant="outline" size="lg" className="w-full border-gray-200">
+          <Button variant="outline" size="lg" className="w-full border-border">
             View All Insights <ArrowRight className="ml-2 h-4 w-4" />
           </Button>
         </Link>

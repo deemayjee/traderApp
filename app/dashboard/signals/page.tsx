@@ -22,6 +22,7 @@ import { SignalValidator, type ValidationResult } from '@/lib/services/signal-va
 import { signalStorage } from '@/lib/services/signal-storage'
 import { useNotifications, createSignalNotification, createRiskNotification } from '@/lib/services/notification-service'
 import { toast } from "@/components/ui/use-toast"
+import { SignalFilterToggle } from "@/components/dashboard/signal-toggle-filter"
 
 // Separate storage for alerts with proper typing
 interface AlertStorage {
@@ -341,32 +342,23 @@ export default function SignalsPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          <Card className="bg-white border-gray-200">
+          <Card className="bg-background border-border">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-xl">Trading Signals</CardTitle>
-                <Tabs defaultValue="all" value={activeSignalTab} onValueChange={setActiveSignalTab}>
-                  <TabsList className="bg-gray-100 border border-gray-200">
-                    <TabsTrigger value="all" className="data-[state=active]:bg-white">
-                      All
-                    </TabsTrigger>
-                    <TabsTrigger value="buy" className="data-[state=active]:bg-white">
-                      Buy
-                    </TabsTrigger>
-                    <TabsTrigger value="sell" className="data-[state=active]:bg-white">
-                      Sell
-                    </TabsTrigger>
-                  </TabsList>
-                </Tabs>
+                <SignalFilterToggle 
+                  value={activeSignalTab} 
+                  onValueChange={setActiveSignalTab} 
+                />
               </div>
             </CardHeader>
             <CardContent className="pt-4">
               {filteredSignals.length === 0 ? (
                 <div className="text-center py-8">
-                  <p className="text-gray-500 mb-2">No signals match your current filters.</p>
+                  <p className="text-muted-foreground mb-2">No signals match your current filters.</p>
                   <Button
                     variant="outline"
-                    className="mt-2 border-gray-200"
+                    className="mt-2 border-border"
                     onClick={() =>
                       setFilters({
                         cryptos: [],
@@ -382,23 +374,23 @@ export default function SignalsPage() {
               ) : (
                 <div className="space-y-4">
                   {filteredSignals.map((signal) => (
-                    <div key={signal.id} className="border border-gray-200 rounded-lg p-4">
+                    <div key={signal.id} className="border border-border rounded-lg p-4">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-2">
-                          <TrendingUp className="h-5 w-5 text-gray-600" />
+                          <TrendingUp className="h-5 w-5 text-muted-foreground" />
                           <div>
                             <div className="flex items-center">
                               <h3 className="font-medium">{signal.agent}</h3>
                               <Badge
                                 className={`ml-2 ${
-                                  signal.type === "Buy" ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"
+                                  signal.type === "Buy" ? "bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-300" : "bg-red-100 text-red-600 dark:bg-red-900 dark:text-red-300"
                                 }`}
                               >
                                 {signal.type}
                               </Badge>
-                              <Badge className="ml-2 bg-gray-100 text-gray-600">{signal.symbol}</Badge>
+                              <Badge className="ml-2 bg-muted text-muted-foreground">{signal.symbol}</Badge>
                             </div>
-                            <p className="text-sm text-gray-600 mt-1">{signal.signal}</p>
+                            <p className="text-sm text-muted-foreground mt-1">{signal.signal}</p>
                           </div>
                         </div>
                         <div className="flex items-center space-x-2">
@@ -406,10 +398,10 @@ export default function SignalsPage() {
                             className={`
                               ${
                                 signal.result === "Success"
-                                  ? "bg-green-100 text-green-600"
+                                  ? "bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-300"
                                   : signal.result === "Failure"
-                                    ? "bg-red-100 text-red-600"
-                                    : "bg-gray-100 text-gray-600"
+                                    ? "bg-red-100 text-red-600 dark:bg-red-900 dark:text-red-300"
+                                    : "bg-muted text-muted-foreground"
                               }
                             `}
                           >
@@ -418,7 +410,7 @@ export default function SignalsPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-8 w-8 p-0 text-gray-500 hover:text-red-600"
+                            className="h-8 w-8 p-0 text-muted-foreground hover:text-red-600"
                             onClick={() => handleDeleteSignal(signal.id)}
                           >
                             <Trash2 className="h-4 w-4" />
@@ -429,19 +421,19 @@ export default function SignalsPage() {
 
                       <div className="grid grid-cols-4 gap-4 mt-4">
                         <div>
-                          <p className="text-xs text-gray-500">Price</p>
+                          <p className="text-xs text-muted-foreground">Price</p>
                           <p className="font-medium">{signal.price}</p>
                         </div>
                         <div>
-                          <p className="text-xs text-gray-500">Time</p>
+                          <p className="text-xs text-muted-foreground">Time</p>
                           <p className="font-medium">{signal.time}</p>
                         </div>
                         <div>
-                          <p className="text-xs text-gray-500">Confidence</p>
+                          <p className="text-xs text-muted-foreground">Confidence</p>
                           <p className="font-medium">{signal.confidence}%</p>
                         </div>
                         <div>
-                          <p className="text-xs text-gray-500">Result</p>
+                          <p className="text-xs text-muted-foreground">Result</p>
                           {signal.profit ? (
                             <p
                               className={`font-medium ${
@@ -451,7 +443,7 @@ export default function SignalsPage() {
                               {signal.profit}
                             </p>
                           ) : (
-                            <p className="font-medium text-gray-600">-</p>
+                            <p className="font-medium text-muted-foreground">-</p>
                           )}
                         </div>
                       </div>
@@ -459,25 +451,25 @@ export default function SignalsPage() {
                   ))}
                 </div>
               )}
-              <Button variant="outline" className="w-full mt-4 border-gray-200">
+              <Button variant="outline" className="w-full mt-4 border-border">
                 View All Signals
               </Button>
             </CardContent>
           </Card>
 
-          <Card className="bg-white border-gray-200">
+          <Card className="bg-background border-border">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-xl">Signal Performance</CardTitle>
                 <Tabs defaultValue="week">
-                  <TabsList className="bg-gray-100 border border-gray-200">
-                    <TabsTrigger value="week" className="data-[state=active]:bg-white">
+                  <TabsList className="bg-muted border border-border">
+                    <TabsTrigger value="week" className="data-[state=active]:bg-background">
                       Week
                     </TabsTrigger>
-                    <TabsTrigger value="month" className="data-[state=active]:bg-white">
+                    <TabsTrigger value="month" className="data-[state=active]:bg-background">
                       Month
                     </TabsTrigger>
-                    <TabsTrigger value="year" className="data-[state=active]:bg-white">
+                    <TabsTrigger value="year" className="data-[state=active]:bg-background">
                       Year
                     </TabsTrigger>
                   </TabsList>
@@ -485,13 +477,13 @@ export default function SignalsPage() {
               </div>
             </CardHeader>
             <CardContent className="pt-4">
-              <div className="h-[300px] w-full bg-gray-50 rounded-md relative overflow-hidden border border-gray-200">
+              <div className="h-[300px] w-full bg-card rounded-md relative overflow-hidden border border-border">
                 <div className="absolute inset-0">
                   <svg viewBox="0 0 100 40" className="h-full w-full">
                     <path
                       d="M0,20 Q10,18 20,25 T40,15 T60,20 T80,10 T100,15"
                       fill="none"
-                      stroke="black"
+                      stroke="currentColor"
                       strokeWidth="0.5"
                     />
                     <path
@@ -501,28 +493,28 @@ export default function SignalsPage() {
                     />
                     <defs>
                       <linearGradient id="gradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                        <stop offset="0%" stopColor="black" />
-                        <stop offset="100%" stopColor="black" stopOpacity="0" />
+                        <stop offset="0%" stopColor="currentColor" />
+                        <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
                       </linearGradient>
                     </defs>
                   </svg>
                 </div>
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <p className="text-gray-400 text-sm">Signal performance chart will be displayed here</p>
+                  <p className="text-muted-foreground text-sm">Signal performance chart will be displayed here</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-3 gap-4 mt-4">
-                <div className="bg-gray-50 rounded-md p-3 border border-gray-200">
-                  <p className="text-xs text-gray-500">Success Rate</p>
+                <div className="bg-card rounded-md p-3 border border-border">
+                  <p className="text-xs text-muted-foreground">Success Rate</p>
                   <p className="text-lg font-medium text-green-600">78%</p>
                 </div>
-                <div className="bg-gray-50 rounded-md p-3 border border-gray-200">
-                  <p className="text-xs text-gray-500">Avg. Profit</p>
+                <div className="bg-card rounded-md p-3 border border-border">
+                  <p className="text-xs text-muted-foreground">Avg. Profit</p>
                   <p className="text-lg font-medium">+3.2%</p>
                 </div>
-                <div className="bg-gray-50 rounded-md p-3 border border-gray-200">
-                  <p className="text-xs text-gray-500">Total Signals</p>
+                <div className="bg-card rounded-md p-3 border border-border">
+                  <p className="text-xs text-muted-foreground">Total Signals</p>
                   <p className="text-lg font-medium">{signals.length}</p>
                 </div>
               </div>
@@ -537,10 +529,10 @@ export default function SignalsPage() {
             onCreateAlert={() => setIsCreateAlertOpen(true)}
           />
 
-          <Card className="bg-white border-gray-200">
+          <Card className="bg-background border-border">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <div className="flex items-center">
-                <Brain className="h-5 w-5 mr-2 text-gray-600" />
+                <Brain className="h-5 w-5 mr-2 text-muted-foreground" />
                 <CardTitle className="text-xl">AI Insights</CardTitle>
               </div>
             </CardHeader>
@@ -566,7 +558,7 @@ export default function SignalsPage() {
                 ))}
               </div>
 
-              <Button variant="outline" size="sm" className="w-full border-gray-200">
+              <Button variant="outline" size="sm" className="w-full border-border">
                 View All Insights
               </Button>
             </CardContent>

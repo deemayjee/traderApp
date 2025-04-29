@@ -34,19 +34,6 @@ export function NotificationSettings() {
             </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <Globe className="h-4 w-4 text-gray-500" />
-                <Label htmlFor="browser" className="font-normal">
-                  Browser Notifications
-                </Label>
-              </div>
-              <Switch
-                id="browser"
-                checked={preferences.browser}
-                onCheckedChange={(checked) => updatePreferences({ browser: checked })}
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
                 <Mail className="h-4 w-4 text-gray-500" />
                 <Label htmlFor="email" className="font-normal">
                   Email Notifications

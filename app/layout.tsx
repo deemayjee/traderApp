@@ -7,6 +7,7 @@ import { NotificationProvider } from "@/contexts/notification-context"
 import { Toaster } from "@/components/ui/toaster"
 import { SolanaWalletProvider } from "@/components/auth/wallet-provider"
 import { WalletAuthProvider } from "@/components/auth/wallet-context"
+import { UserProfileProvider } from "@/contexts/user-profile-context"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -23,14 +24,16 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.className} bg-white text-gray-900 antialiased`}>
+      <body className={`${inter.className} antialiased`}>
         <SolanaWalletProvider>
           <WalletAuthProvider>
             <NotificationProvider>
-              <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} disableTransitionOnChange>
-                {children}
-                <Toaster />
-              </ThemeProvider>
+              <UserProfileProvider>
+                <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} disableTransitionOnChange>
+                  {children}
+                  <Toaster />
+                </ThemeProvider>
+              </UserProfileProvider>
             </NotificationProvider>
           </WalletAuthProvider>
         </SolanaWalletProvider>

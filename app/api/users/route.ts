@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { supabase } from "@/lib/supabase"
+import { supabaseAdmin } from "@/lib/supabase"
 
 export async function GET(request: Request) {
   try {
@@ -12,15 +12,10 @@ export async function GET(request: Request) {
     }
 
     // Fetch user data from Supabase
-    const { data: user, error } = await supabase
+    const { data: user, error } = await supabaseAdmin
       .from("users")
-      .select(`
-        *,
-        wallets (*),
-        portfolio (*),
-        settings (*)
-      `)
-      .eq("wallets.address", walletAddress)
+      .select("*, wallets(*)")
+      .eq("wallet_address", walletAddress)
       .single()
 
     if (error) {
@@ -32,7 +27,38 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
-    return NextResponse.json(user)
+    // Fetch all related data using wallet_address
+    const [
+      { data: profile },
+      { data: preferences },
+      { data: dashboard },
+      { data: notifications },
+      { data: trading },
+      { data: security },
+      { data: subscription }
+    ] = await Promise.all([
+      supabaseAdmin.from("user_profiles").select("*").eq("wallet_address", walletAddress).single(),
+      supabaseAdmin.from("user_preferences").select("*").eq("wallet_address", walletAddress).single(),
+      supabaseAdmin.from("dashboard_preferences").select("*").eq("wallet_address", walletAddress).single(),
+      supabaseAdmin.from("notification_settings").select("*").eq("wallet_address", walletAddress).single(),
+      supabaseAdmin.from("trading_preferences").select("*").eq("wallet_address", walletAddress).single(),
+      supabaseAdmin.from("security_settings").select("*").eq("wallet_address", walletAddress).single(),
+      supabaseAdmin.from("subscription_settings").select("*").eq("wallet_address", walletAddress).single()
+    ])
+
+    // Combine all data
+    const userData = {
+      ...user,
+      user_profile: profile,
+      user_preferences: preferences,
+      dashboard_preferences: dashboard,
+      notification_settings: notifications,
+      trading_preferences: trading,
+      security_settings: security,
+      subscription_settings: subscription
+    }
+
+    return NextResponse.json(userData)
   } catch (error) {
     console.error("Error in GET /api/users:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
@@ -49,89 +75,245 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Wallet address is required" }, { status: 400 })
     }
 
+    const walletAddress = body.wallet.address
+
     try {
       // First, try to get existing user by wallet address
-      const { data: existingWallet } = await supabase
-        .from('wallets')
-        .select('user_id, address')
-        .eq('address', body.wallet.address)
+      const { data: existingUser } = await supabaseAdmin
+        .from('users')
+        .select('id, wallet_address')
+        .eq('wallet_address', walletAddress)
         .single()
 
       let userId;
       
-      if (existingWallet) {
-        // If wallet exists, get the user
-        userId = existingWallet.user_id;
+      if (existingUser) {
+        // If user exists, get the user ID
+        userId = existingUser.id;
         
-        // Update last login timestamp
-        await supabase
+        // Update last active timestamp
+        await supabaseAdmin
           .from('users')
           .update({
-            updated_at: new Date().toISOString()
+            last_active: new Date().toISOString()
           })
           .eq('id', userId)
       } else {
         // Create new user
-        const { data: newUser, error: insertError } = await supabase
+        const { data: newUser, error: userError } = await supabaseAdmin
           .from('users')
           .insert({
+            wallet_address: walletAddress,
+            last_active: new Date().toISOString(),
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           })
           .select()
           .single()
 
-        if (insertError) throw insertError
+        if (userError) throw userError
         userId = newUser.id;
-        
-        // Add wallet
-        const { error: walletError } = await supabase
+
+        // Create wallet entry
+        const { error: walletError } = await supabaseAdmin
           .from('wallets')
           .insert({
+            address: walletAddress,
             user_id: userId,
-            address: body.wallet.address,
-            chain: body.wallet.chain || 'solana',
+            is_primary: true,
+            chain: body.wallet.chain || 'ethereum',
+            last_active: new Date().toISOString(),
+            created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           })
 
         if (walletError) throw walletError
-        
-        // Create default settings
-        const { error: settingsError } = await supabase
-          .from('settings')
-          .insert({
-            user_id: userId,
-            notifications: true,
-            theme: 'light',
-            updated_at: new Date().toISOString()
-          })
 
-        if (settingsError) throw settingsError
+        // Check if profile exists before creating
+        const { data: existingProfile } = await supabaseAdmin
+          .from('user_profiles')
+          .select('id')
+          .eq('wallet_address', walletAddress)
+          .single()
 
-        // Create empty portfolio
-        const { error: portfolioError } = await supabase
-          .from('portfolio')
-          .insert({
-            user_id: userId,
-            updated_at: new Date().toISOString()
-          })
+        if (!existingProfile) {
+          // Create user profile only if it doesn't exist
+          const { error: profileError } = await supabaseAdmin
+            .from('user_profiles')
+            .insert({
+              wallet_address: walletAddress,
+              last_active: new Date().toISOString(),
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
 
-        if (portfolioError) throw portfolioError
+          if (profileError) throw profileError
+        }
+
+        // Check if preferences exist before creating
+        const { data: existingPreferences } = await supabaseAdmin
+          .from('user_preferences')
+          .select('id')
+          .eq('wallet_address', walletAddress)
+          .single()
+
+        if (!existingPreferences) {
+          // Create user preferences only if they don't exist
+          const { error: preferencesError } = await supabaseAdmin
+            .from('user_preferences')
+            .insert({
+              wallet_address: walletAddress,
+              theme: 'light',
+              language: 'en',
+              currency: 'USD',
+              last_active: new Date().toISOString(),
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+
+          if (preferencesError) throw preferencesError
+        }
+
+        // Check if dashboard preferences exist before creating
+        const { data: existingDashboard } = await supabaseAdmin
+          .from('dashboard_preferences')
+          .select('id')
+          .eq('wallet_address', walletAddress)
+          .single()
+
+        if (!existingDashboard) {
+          // Create dashboard preferences only if they don't exist
+          const { error: dashboardError } = await supabaseAdmin
+            .from('dashboard_preferences')
+            .insert({
+              wallet_address: walletAddress,
+              last_active: new Date().toISOString(),
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+
+          if (dashboardError) throw dashboardError
+        }
+
+        // Check if notification settings exist before creating
+        const { data: existingNotifications } = await supabaseAdmin
+          .from('notification_settings')
+          .select('id')
+          .eq('wallet_address', walletAddress)
+          .single()
+
+        if (!existingNotifications) {
+          // Create notification settings only if they don't exist
+          const { error: notificationError } = await supabaseAdmin
+            .from('notification_settings')
+            .insert({
+              wallet_address: walletAddress,
+              email_notifications: true,
+              push_notifications: true,
+              last_active: new Date().toISOString(),
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+
+          if (notificationError) throw notificationError
+        }
+
+        // Check if trading preferences exist before creating
+        const { data: existingTrading } = await supabaseAdmin
+          .from('trading_preferences')
+          .select('id')
+          .eq('wallet_address', walletAddress)
+          .single()
+
+        if (!existingTrading) {
+          // Create trading preferences only if they don't exist
+          const { error: tradingError } = await supabaseAdmin
+            .from('trading_preferences')
+            .insert({
+              wallet_address: walletAddress,
+              last_active: new Date().toISOString(),
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+
+          if (tradingError) throw tradingError
+        }
+
+        // Check if security settings exist before creating
+        const { data: existingSecurity } = await supabaseAdmin
+          .from('security_settings')
+          .select('id')
+          .eq('wallet_address', walletAddress)
+          .single()
+
+        if (!existingSecurity) {
+          // Create security settings only if they don't exist
+          const { error: securityError } = await supabaseAdmin
+            .from('security_settings')
+            .insert({
+              wallet_address: walletAddress,
+              last_active: new Date().toISOString(),
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+
+          if (securityError) throw securityError
+        }
+
+        // Check if subscription settings exist before creating
+        const { data: existingSubscription } = await supabaseAdmin
+          .from('subscription_settings')
+          .select('id')
+          .eq('wallet_address', walletAddress)
+          .single()
+
+        if (!existingSubscription) {
+          // Create subscription settings only if they don't exist
+          const { error: subscriptionError } = await supabaseAdmin
+            .from('subscription_settings')
+            .insert({
+              wallet_address: walletAddress,
+              last_active: new Date().toISOString(),
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+
+          if (subscriptionError) throw subscriptionError
+        }
       }
 
-      // Return the user data
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select(`
-          *,
-          wallets (*),
-          portfolio (*),
-          settings (*)
-        `)
-        .eq('id', userId)
-        .single()
+      // Fetch all user data
+      const [
+        { data: user },
+        { data: profile },
+        { data: preferences },
+        { data: dashboard },
+        { data: notifications },
+        { data: trading },
+        { data: security },
+        { data: subscription }
+      ] = await Promise.all([
+        supabaseAdmin.from("users").select("*, wallets(*)").eq("id", userId).single(),
+        supabaseAdmin.from("user_profiles").select("*").eq("wallet_address", walletAddress).single(),
+        supabaseAdmin.from("user_preferences").select("*").eq("wallet_address", walletAddress).single(),
+        supabaseAdmin.from("dashboard_preferences").select("*").eq("wallet_address", walletAddress).single(),
+        supabaseAdmin.from("notification_settings").select("*").eq("wallet_address", walletAddress).single(),
+        supabaseAdmin.from("trading_preferences").select("*").eq("wallet_address", walletAddress).single(),
+        supabaseAdmin.from("security_settings").select("*").eq("wallet_address", walletAddress).single(),
+        supabaseAdmin.from("subscription_settings").select("*").eq("wallet_address", walletAddress).single()
+      ])
 
-      if (userError) throw userError
+      // Combine all data
+      const userData = {
+        ...user,
+        user_profile: profile,
+        user_preferences: preferences,
+        dashboard_preferences: dashboard,
+        notification_settings: notifications,
+        trading_preferences: trading,
+        security_settings: security,
+        subscription_settings: subscription
+      }
 
       return NextResponse.json(userData)
     } catch (error) {

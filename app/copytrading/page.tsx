@@ -1,5 +1,5 @@
 import { CopyTradingHeader } from "@/components/copytrading/copytrading-header"
-import { TopTraders } from "@/components/copytrading/top-traders"
+import { NewsFeed } from "@/components/copytrading/news-feed"
 import { ConnectedWallets } from "@/components/copytrading/connected-wallets"
 import { ActiveCopies } from "@/components/copytrading/active-copies"
 import { CopyTradingStats } from "@/components/copytrading/copytrading-stats"
@@ -11,7 +11,7 @@ export default function CopyTrading() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
         <div className="lg:col-span-2">
-          <TopTraders />
+          <NewsFeed />
           <div className="mt-6">
             <ActiveCopies />
           </div>
