@@ -5,106 +5,96 @@ import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { TopPerformers } from "@/components/dashboard/top-performers"
 import { SimplePriceChart } from "@/components/dashboard/simple-price-chart"
 import { AIInsights } from "@/components/dashboard/ai-insights"
-import { CommunitySignals } from "@/components/dashboard/community-signals"
 import { PortfolioOverview } from "@/components/dashboard/portfolio-overview"
 import { TradingAlerts } from "@/components/dashboard/trading-alerts"
 import { MarketOverview } from "@/components/dashboard/market-overview"
 import { Loader2 } from "lucide-react"
 import {
   fetchCryptoMarkets,
-  formatCryptoAsset,
   generateAlertsFromCryptoData,
   generatePortfolioFromCryptoData,
-  generateSignalsFromCryptoData,
   type FormattedCryptoAsset,
   type CryptoAlert,
-  type CryptoSignal,
   type PortfolioAsset,
+  type TimeRange,
+  fetchMarketData,
 } from "@/lib/api/crypto-api"
-import { MOCK_CRYPTO_DATA } from "@/lib/api/mock-crypto-data"
 import { CreateAlertDialog } from "@/components/dashboard/create-alert-dialog"
 
-// Add a state to track chart errors
 export default function Dashboard() {
   const [marketData, setMarketData] = useState<FormattedCryptoAsset[]>([])
-  const [topPerformers, setTopPerformers] = useState<FormattedCryptoAsset[]>([])
-  const [portfolioAssets, setPortfolioAssets] = useState<PortfolioAsset[]>([])
+  const [selectedToken, setSelectedToken] = useState<FormattedCryptoAsset | null>(null)
+  const [timeRange, setTimeRange] = useState<"1m" | "5m" | "15m" | "1h" | "4h" | "1d" | "7d" | "30d" | "3m" | "6m" | "1y">("1d")
   const [alerts, setAlerts] = useState<CryptoAlert[]>([])
-  const [signals, setSignals] = useState<CryptoSignal[]>([])
+  const [portfolioAssets, setPortfolioAssets] = useState<PortfolioAsset[]>([])
+  const [showCreateAlert, setShowCreateAlert] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [useSimpleChart, setUseSimpleChart] = useState(false)
-  const [showCreateAlert, setShowCreateAlert] = useState(false)
 
-  const handleToggleAlert = (id: string) => {
-    setAlerts(prevAlerts => 
-      prevAlerts.map(alert => 
-        alert.id === id ? { ...alert, active: !alert.active } : alert
-      )
-    )
-  }
-
-  const handleDeleteAlert = (id: string) => {
-    setAlerts(prevAlerts => prevAlerts.filter(alert => alert.id !== id))
-  }
-
-  // Add error handling for the chart
   useEffect(() => {
-    const handleChartError = () => {
-      console.log("Chart error detected, switching to simple chart")
-      setUseSimpleChart(true)
-    }
-
-    window.addEventListener("error", handleChartError)
-
-    return () => {
-      window.removeEventListener("error", handleChartError)
-    }
-  }, [])
-
-  // Update the useEffect for fetching data to handle errors better
-  useEffect(() => {
-    const fetchData = async () => {
+    async function loadMarketData() {
       try {
         setIsLoading(true)
+        const data = await fetchMarketData()
+        setMarketData(data)
+        
+        // Set initial selected token
+        if (data.length > 0) {
+          setSelectedToken(data[0])
+        }
 
-        // Fetch market data
-        const cryptoData = await fetchCryptoMarkets("usd", 10)
-        const formattedData = cryptoData.map(formatCryptoAsset)
-        setMarketData(formattedData.slice(0, 5))
-
-        // Sort by price change for top performers
-        const sortedByChange = [...formattedData].sort((a, b) => b.changePercent - a.changePercent)
-        setTopPerformers(sortedByChange.slice(0, 5))
-
-        // Generate portfolio data
-        const portfolio = generatePortfolioFromCryptoData(cryptoData)
-        setPortfolioAssets(portfolio)
-
+        // Generate mock data
+        setAlerts(generateAlertsFromCryptoData(data))
+        setPortfolioAssets(generatePortfolioFromCryptoData(data))
         setError(null)
       } catch (err) {
-        console.error("Error fetching dashboard data:", err)
-        setError("Failed to load dashboard data. Please try again later.")
-        // Set empty data
-        setMarketData([])
-        setTopPerformers([])
-        setPortfolioAssets([])
-        setAlerts([])
-        setSignals([])
+        console.error("Error loading market data:", err)
+        setError("Failed to load market data. Please try again later.")
       } finally {
         setIsLoading(false)
       }
     }
 
-    fetchData()
+    loadMarketData()
   }, [])
+
+  const handleTokenSelect = (token: FormattedCryptoAsset) => {
+    setSelectedToken(token)
+  }
+
+  const handleTimeRangeChange = (newRange: TimeRange) => {
+    setTimeRange(newRange)
+  }
 
   const handleCreateAlert = () => {
     setShowCreateAlert(true)
   }
 
-  // Force simple chart for now to ensure it works
-  const chartComponent = <SimplePriceChart />
+  const handleDeleteAlert = (alertId: string) => {
+    setAlerts(alerts.filter((alert) => alert.id !== alertId))
+  }
+
+  const handleToggleAlert = (alertId: string) => {
+    setAlerts(
+      alerts.map((alert) =>
+        alert.id === alertId ? { ...alert, active: !alert.active } : alert
+      )
+    )
+  }
+
+  // Get top performers
+  const topPerformers = [...marketData]
+    .sort((a, b) => b.changePercent - a.changePercent)
+    .slice(0, 3)
+
+  // Prepare chart component
+  const chartComponent = selectedToken ? (
+    <SimplePriceChart 
+      selectedCoin={selectedToken.symbol} 
+      timeRange={timeRange}
+      onTimeRangeChange={handleTimeRangeChange}
+    />
+  ) : null
 
   if (isLoading) {
     return (
@@ -114,7 +104,6 @@ export default function Dashboard() {
     )
   }
 
-  // Update the error display to show a warning instead of an error when using mock data
   if (error) {
     return (
       <>
@@ -127,7 +116,13 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
             {chartComponent}
-            {marketData.length > 0 && <MarketOverview marketData={marketData} className="mt-6" />}
+            {marketData.length > 0 && (
+              <MarketOverview 
+                marketData={marketData} 
+                className="mt-6" 
+                onTokenSelect={handleTokenSelect}
+              />
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
               {topPerformers.length > 0 && <TopPerformers topCoins={topPerformers} />}
               {portfolioAssets.length > 0 && <PortfolioOverview assets={portfolioAssets} />}
@@ -144,10 +139,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="mt-6">
-          <CommunitySignals />
-        </div>
-
         <CreateAlertDialog open={showCreateAlert} onOpenChange={setShowCreateAlert} />
       </>
     )
@@ -160,7 +151,13 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
         <div className="lg:col-span-2">
           {chartComponent}
-          {marketData.length > 0 && <MarketOverview marketData={marketData} className="mt-6" />}
+          {marketData.length > 0 && (
+            <MarketOverview 
+              marketData={marketData} 
+              className="mt-6" 
+              onTokenSelect={handleTokenSelect}
+            />
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
             {topPerformers.length > 0 && <TopPerformers topCoins={topPerformers} />}
             {portfolioAssets.length > 0 && <PortfolioOverview assets={portfolioAssets} />}
@@ -175,10 +172,6 @@ export default function Dashboard() {
             onToggleAlert={handleToggleAlert}
           />
         </div>
-      </div>
-
-      <div className="mt-6">
-        <CommunitySignals />
       </div>
 
       <CreateAlertDialog open={showCreateAlert} onOpenChange={setShowCreateAlert} />

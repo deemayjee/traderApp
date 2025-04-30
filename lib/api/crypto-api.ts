@@ -1,30 +1,98 @@
+import { TechnicalAnalyzer } from '@/lib/services/technical-analyzer'
+import { OnChainAnalyzer } from '@/lib/services/onchain-analyzer'
+import { MacroAnalyzer } from '@/lib/services/macro-analyzer'
+
 // Types for cryptocurrency data
+export interface DexScreenerPair {
+  chainId: string
+  dexId: string
+  url: string
+  pairAddress: string
+  baseToken: {
+    address: string
+    name: string
+    symbol: string
+  }
+  quoteToken: {
+    symbol: string
+  }
+  priceNative: string
+  priceUsd: string
+  txns: {
+    h24: {
+      buys: number
+      sells: number
+    }
+    h6: {
+      buys: number
+      sells: number
+    }
+    h1: {
+      buys: number
+      sells: number
+    }
+    m5: {
+      buys: number
+      sells: number
+    }
+  }
+  volume: {
+    h24: number
+    h6: number
+    h1: number
+    m5: number
+  }
+  priceChange: {
+    h24: number
+    h6: number
+    h1: number
+    m5: number
+  }
+  liquidity?: {
+    usd: number
+    base: number
+    quote: number
+  }
+  fdv?: number
+  pairCreatedAt?: number
+}
+
 export interface CryptoAsset {
   id: string
   symbol: string
   name: string
-  image: string
+  image?: string
   current_price: number
   market_cap: number
-  market_cap_rank: number
-  fully_diluted_valuation: number | null
+  market_cap_rank?: number
+  fully_diluted_valuation?: number
   total_volume: number
-  high_24h: number
-  low_24h: number
-  price_change_24h: number
+  high_24h?: number
+  low_24h?: number
+  price_change_24h?: number
   price_change_percentage_24h: number
-  market_cap_change_24h: number
-  market_cap_change_percentage_24h: number
-  circulating_supply: number
-  total_supply: number | null
-  max_supply: number | null
-  ath: number
-  ath_change_percentage: number
-  ath_date: string
-  atl: number
-  atl_change_percentage: number
-  atl_date: string
-  last_updated: string
+  price_change_percentage_1h_in_currency?: number
+  price_change_percentage_24h_in_currency?: number
+  price_change_percentage_7d_in_currency?: number
+  price_change_percentage_30d_in_currency?: number
+  price_change_percentage_1y_in_currency?: number
+  market_cap_change_24h?: number
+  market_cap_change_percentage_24h?: number
+  circulating_supply?: number
+  total_supply?: number
+  max_supply?: number
+  ath?: number
+  ath_change_percentage?: number
+  ath_date?: string
+  atl?: number
+  atl_change_percentage?: number
+  atl_date?: string
+  roi?: {
+    times: number
+    currency: string
+    percentage: number
+  } | null
+  last_updated?: string
 }
 
 export interface FormattedCryptoAsset {
@@ -37,9 +105,9 @@ export interface FormattedCryptoAsset {
   changePercent: number
   marketCap: string
   volume: string
-  image: string
   positive: boolean
   sentiment: "Bullish" | "Neutral" | "Bearish"
+  image?: string
 }
 
 export interface CryptoAlert {
@@ -98,49 +166,250 @@ export interface PortfolioTransaction {
   price: number
 }
 
-// Function to fetch cryptocurrency market data
-export async function fetchCryptoMarkets(
-  currency = "usd",
-  perPage = 20,
-  page = 1,
-  sparkline = false,
-  order = "market_cap_desc",
-): Promise<CryptoAsset[]> {
-  const maxRetries = 3
-  let retries = 0
+const TOP_TOKENS = [
+  { id: "bitcoin", symbol: "WBTC", name: "Bitcoin" },
+  { id: "ethereum", symbol: "WETH", name: "Ethereum" },
+  { id: "solana", symbol: "SOL", name: "Solana" },
+  { id: "avalanche", symbol: "WAVAX", name: "Avalanche" },
+  { id: "binancecoin", symbol: "WBNB", name: "BNB" },
+  { id: "fartcoin", symbol: "FART", name: "FartCoin" },
+  { id: "popcat", symbol: "POPCAT", name: "PopCat" }
+]
 
-  while (retries < maxRetries) {
-    try {
+// Function to fetch cryptocurrency market data from DexScreener
+export async function fetchCryptoMarkets(): Promise<FormattedCryptoAsset[]> {
+  try {
+    const pairs = await Promise.all(
+      TOP_TOKENS.map(async (token) => {
       const response = await fetch(
-        `https://api.coingecko.com/api/v3/coins/markets?vs_currency=${currency}&order=${order}&per_page=${perPage}&page=${page}&sparkline=${sparkline}`,
+          `https://api.dexscreener.com/latest/dex/search?q=${token.symbol}`,
         {
           headers: {
             Accept: "application/json",
             "Cache-Control": "no-cache",
           },
           cache: "no-store",
-        },
+          }
       )
 
       if (!response.ok) {
         throw new Error(`API error: ${response.status}`)
       }
 
-      const data: CryptoAsset[] = await response.json()
-      return data
-    } catch (error) {
-      retries++
-      console.error(`Error fetching crypto markets (attempt ${retries}/${maxRetries}):`, error)
+        const data = await response.json()
+        // Get the most liquid pair for the token
+        const bestPair = data.pairs?.[0]
+        return bestPair
+      })
+    )
 
-      // Wait before retrying (exponential backoff)
-      if (retries < maxRetries) {
-        await new Promise((resolve) => setTimeout(resolve, 1000 * retries))
-      }
-    }
+    return pairs
+      .filter((pair): pair is DexScreenerPair => pair !== undefined)
+      .map((pair) => formatDexScreenerPair(pair))
+    } catch (error) {
+    console.error("Error fetching crypto markets:", error)
+    return []
+  }
+}
+
+// Function to format DexScreener pair data
+export async function formatDexScreenerPair(pair: DexScreenerPair): Promise<FormattedCryptoAsset> {
+  const priceValue = parseFloat(pair.priceUsd)
+  const changePercent = pair.priceChange.h24 || 0
+  const volume24h = pair.volume.h24 || 0
+  const marketCap = pair.fdv || volume24h * 10 // Fallback calculation if FDV not available
+
+  // Create a mock CryptoAsset for sentiment analysis
+  const mockAsset: CryptoAsset = {
+    id: pair.baseToken.address,
+    symbol: pair.baseToken.symbol,
+    name: pair.baseToken.name,
+    current_price: priceValue,
+    price_change_percentage_24h: changePercent,
+    market_cap: marketCap,
+    total_volume: volume24h,
+    market_cap_rank: 0,
+    fully_diluted_valuation: 0,
+    high_24h: priceValue * 1.1,
+    low_24h: priceValue * 0.9,
+    price_change_24h: changePercent,
+    price_change_percentage_1h_in_currency: 0,
+    price_change_percentage_24h_in_currency: changePercent,
+    price_change_percentage_7d_in_currency: 0,
+    price_change_percentage_30d_in_currency: 0,
+    price_change_percentage_1y_in_currency: 0,
+    market_cap_change_24h: 0,
+    market_cap_change_percentage_24h: 0,
+    circulating_supply: 0,
+    total_supply: 0,
+    max_supply: 0,
+    ath: priceValue * 2,
+    ath_change_percentage: 0,
+    ath_date: new Date().toISOString(),
+    atl: priceValue * 0.5,
+    atl_change_percentage: 0,
+    atl_date: new Date().toISOString(),
+    roi: null,
+    last_updated: new Date().toISOString(),
+    image: "",
   }
 
-  console.warn("Failed to fetch crypto markets after multiple attempts")
-  return []
+  // Determine sentiment using AI analysis
+  const sentiment = await getSentiment(mockAsset)
+
+  return {
+    id: pair.baseToken.address,
+    name: pair.baseToken.name,
+    symbol: pair.baseToken.symbol,
+    price: formatPrice(priceValue),
+    priceValue,
+    change: formatChange(changePercent),
+    changePercent,
+    marketCap: formatLargeNumber(marketCap),
+    volume: formatLargeNumber(volume24h),
+    positive: changePercent > 0,
+    sentiment,
+  }
+}
+
+// Helper functions
+function formatPrice(price: number): string {
+  if (price < 0.01) return price.toFixed(6)
+  if (price < 1) return price.toFixed(4)
+  if (price < 10) return price.toFixed(3)
+  if (price < 1000) return price.toFixed(2)
+  return price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function formatChange(change: number): string {
+  return change > 0 ? `+${change.toFixed(2)}%` : `${change.toFixed(2)}%`
+}
+
+function formatLargeNumber(num: number): string {
+  if (num >= 1e9) return `$${(num / 1e9).toFixed(2)}B`
+  if (num >= 1e6) return `$${(num / 1e6).toFixed(2)}M`
+  if (num >= 1e3) return `$${(num / 1e3).toFixed(2)}K`
+  return `$${num.toFixed(2)}`
+}
+
+async function getSentiment(asset: CryptoAsset): Promise<"Bullish" | "Neutral" | "Bearish"> {
+  try {
+    const technicalAnalyzer = new TechnicalAnalyzer()
+    const onChainAnalyzer = new OnChainAnalyzer()
+    const macroAnalyzer = new MacroAnalyzer()
+
+    // Get analyses from all three analyzers
+    const [technicalAnalysis, onChainAnalysis, macroAnalysis] = await Promise.all([
+      technicalAnalyzer.analyze([asset], [], { type: 'Technical Analysis', indicators: ['RSI', 'MACD', 'SMA'] } as any),
+      onChainAnalyzer.analyze(asset),
+      macroAnalyzer.analyze(asset)
+    ])
+
+    // Calculate weighted scores
+    let bullishScore = 0
+    let bearishScore = 0
+    let totalWeight = 0
+
+    // Technical Analysis (40% weight)
+    if (technicalAnalysis) {
+      const weight = 0.4
+      totalWeight += weight
+      if (technicalAnalysis.type === 'Buy') {
+        bullishScore += technicalAnalysis.confidence * weight
+      } else {
+        bearishScore += technicalAnalysis.confidence * weight
+      }
+    }
+
+    // On-chain Analysis (35% weight)
+    if (onChainAnalysis) {
+      const weight = 0.35
+      totalWeight += weight
+      if (onChainAnalysis.type === 'Buy') {
+        bullishScore += onChainAnalysis.confidence * weight
+      } else {
+        bearishScore += onChainAnalysis.confidence * weight
+      }
+    }
+
+    // Macro Analysis (25% weight)
+    if (macroAnalysis) {
+      const weight = 0.25
+      totalWeight += weight
+      if (macroAnalysis.type === 'Buy') {
+        bullishScore += macroAnalysis.confidence * weight
+      } else {
+        bearishScore += macroAnalysis.confidence * weight
+      }
+    }
+
+    // Normalize scores
+    if (totalWeight > 0) {
+      bullishScore /= totalWeight
+      bearishScore /= totalWeight
+    }
+
+    // Determine sentiment based on scores
+    if (bullishScore > 70) return "Bullish"
+    if (bearishScore > 70) return "Bearish"
+    return "Neutral"
+  } catch (error) {
+    console.error('Error in sentiment analysis:', error)
+    // Fallback to price-based sentiment if analysis fails
+    return asset.price_change_percentage_24h > 5 
+      ? "Bullish" 
+      : asset.price_change_percentage_24h < -5 
+        ? "Bearish" 
+        : "Neutral"
+  }
+}
+
+export type TimeRange = "1m" | "5m" | "15m" | "1h" | "4h" | "1d" | "7d" | "30d" | "3m" | "6m" | "1y"
+
+export async function fetchCryptoHistoricalData(symbol: string, timeRange: TimeRange) {
+  try {
+    // Convert timeRange to number of data points and interval
+    const getTimeConfig = (range: TimeRange) => {
+      switch (range) {
+        case "1m":
+          return { points: 60, interval: "1s" }
+        case "5m":
+          return { points: 60, interval: "5s" }
+        case "15m":
+          return { points: 60, interval: "15s" }
+        case "1h":
+          return { points: 60, interval: "1m" }
+        case "4h":
+          return { points: 240, interval: "1m" }
+        case "1d":
+          return { points: 24, interval: "1h" }
+        case "7d":
+          return { points: 168, interval: "1h" }
+        case "30d":
+          return { points: 30, interval: "1d" }
+        default:
+          return { points: 24, interval: "1h" }
+      }
+    }
+
+    const { points, interval } = getTimeConfig(timeRange)
+    
+    // Fetch data from DexScreener API
+    const response = await fetch(`/api/dexscreener/chart?symbol=${symbol}&interval=${interval}&limit=${points}`)
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch data from DexScreener')
+    }
+
+    const data = await response.json()
+    return {
+      prices: data.prices || [],
+      volumes: data.volumes || []
+    }
+  } catch (error) {
+    console.error('Error fetching historical data:', error)
+    throw error
+  }
 }
 
 // Function to fetch a specific cryptocurrency by ID
@@ -228,40 +497,6 @@ export async function fetchCryptosByIds(ids: string[], currency = "usd"): Promis
   }
 }
 
-// Add this function to fetch historical price data for a specific cryptocurrency
-export async function fetchCryptoHistoricalData(
-  id: string,
-  days = 14,
-  interval = "hourly",
-): Promise<{ prices: number[][]; volumes: number[][] }> {
-  try {
-    const response = await fetch(
-      `https://api.coingecko.com/api/v3/coins/${id}/market_chart?vs_currency=usd&days=${days}&interval=${interval}`,
-      {
-        headers: {
-          Accept: "application/json",
-          "Cache-Control": "no-cache",
-        },
-        cache: "no-store",
-      },
-    )
-
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`)
-    }
-
-    const data = await response.json()
-    return {
-      prices: data.prices || [],
-      volumes: data.total_volumes || [],
-    }
-  } catch (error) {
-    console.error(`Error fetching historical data for ${id}:`, error)
-    // Return empty arrays as fallback
-    return { prices: [], volumes: [] }
-  }
-}
-
 // Add a function to generate real signals based on technical analysis
 export async function generateRealSignals(cryptoIds: string[]): Promise<CryptoSignal[]> {
   // Return empty array as we want users to create their own signals
@@ -269,22 +504,15 @@ export async function generateRealSignals(cryptoIds: string[]): Promise<CryptoSi
 }
 
 // Function to format cryptocurrency data
-export function formatCryptoAsset(asset: CryptoAsset): FormattedCryptoAsset {
+export async function formatCryptoAsset(asset: CryptoAsset): Promise<FormattedCryptoAsset> {
   // Add null checks for all properties
   const price = asset.current_price ?? 0
   const priceChangePercentage = asset.price_change_percentage_24h ?? 0
   const marketCap = asset.market_cap ?? 0
   const volume = asset.total_volume ?? 0
 
-  // Determine sentiment based on price change
-  let sentiment: "Bullish" | "Neutral" | "Bearish"
-  if (priceChangePercentage > 3) {
-    sentiment = "Bullish"
-  } else if (priceChangePercentage < -3) {
-    sentiment = "Bearish"
-  } else {
-    sentiment = "Neutral"
-  }
+  // Determine sentiment using AI analysis
+  const sentiment = await getSentiment(asset)
 
   // Format price with appropriate decimal places based on value
   const formatPrice = (price: number): string => {
@@ -321,7 +549,7 @@ export function formatCryptoAsset(asset: CryptoAsset): FormattedCryptoAsset {
 }
 
 // Generate mock alerts based on real crypto data
-export function generateAlertsFromCryptoData(cryptoAssets: CryptoAsset[]): CryptoAlert[] {
+export function generateAlertsFromCryptoData(cryptoAssets: FormattedCryptoAsset[]): CryptoAlert[] {
   const alerts: CryptoAlert[] = []
 
   // Use only the top 5 assets for alerts
@@ -330,9 +558,9 @@ export function generateAlertsFromCryptoData(cryptoAssets: CryptoAsset[]): Crypt
   // Generate price alerts
   topAssets.forEach((asset, index) => {
     // Add null checks
-    const currentPrice = asset.current_price ?? 0
-    const priceChangePercentage = asset.price_change_percentage_24h ?? 0
-    const symbol = asset.symbol?.toUpperCase() ?? "UNKNOWN"
+    const currentPrice = asset.priceValue
+    const priceChangePercentage = asset.changePercent
+    const symbol = asset.symbol
 
     // Price alert
     const isPriceUp = priceChangePercentage > 0
@@ -410,20 +638,15 @@ export function generateSignalsFromCryptoData(cryptoAssets: CryptoAsset[]): Cryp
     const type = index % 3 === 0 || priceChangePercentage > 0 ? "Buy" : "Sell"
 
     // Determine result and profit
-    let result: "Pending" | "Success" | "Failure"
+    let result: "Pending" | "Success" | "Failure" = "Pending"
     let profit: string | undefined
 
-    if (time === "2h ago") {
-      result = "Pending"
-    } else {
+    if (time !== "2h ago") {
       const isSuccess = (type === "Buy" && priceChangePercentage > 0) || (type === "Sell" && priceChangePercentage < 0)
       result = isSuccess ? "Success" : "Failure"
 
-      if (result !== "Pending") {
-        const profitValue = isSuccess
-          ? Math.abs(priceChangePercentage) * (Math.random() * 0.5 + 0.5)
-          : -Math.abs(priceChangePercentage) * (Math.random() * 0.5 + 0.5)
-
+      if (isSuccess) {
+        const profitValue = Math.abs(priceChangePercentage) * (Math.random() * 0.5 + 0.5)
         profit = profitValue > 0 ? `+${profitValue.toFixed(1)}%` : `${profitValue.toFixed(1)}%`
       }
     }
@@ -458,7 +681,7 @@ export function generateSignalsFromCryptoData(cryptoAssets: CryptoAsset[]): Cryp
 }
 
 // Generate portfolio assets based on real crypto data
-export function generatePortfolioFromCryptoData(cryptoAssets: CryptoAsset[]): PortfolioAsset[] {
+export function generatePortfolioFromCryptoData(cryptoAssets: FormattedCryptoAsset[]): PortfolioAsset[] {
   // Use top 4 assets for portfolio
   const selectedAssets = cryptoAssets.slice(0, 4)
   const portfolioAssets: PortfolioAsset[] = []
@@ -474,19 +697,14 @@ export function generatePortfolioFromCryptoData(cryptoAssets: CryptoAsset[]): Po
   // Calculate total portfolio value for allocation percentages
   let totalValue = 0
   selectedAssets.forEach((asset, index) => {
-    const currentPrice = asset.current_price ?? 0
+    const currentPrice = asset.priceValue
     totalValue += currentPrice * amounts[index]
   })
 
   // Create portfolio assets
   selectedAssets.forEach((asset, index) => {
-    // Add null checks
-    const currentPrice = asset.current_price ?? 0
-    const priceChangePercentage = asset.price_change_percentage_24h ?? 0
-    const symbol = asset.symbol?.toUpperCase() ?? "UNKNOWN"
-
     const amount = amounts[index]
-    const value = currentPrice * amount
+    const value = asset.priceValue * amount
     const allocation = totalValue > 0 ? Math.round((value / totalValue) * 100) : 0
 
     // Format amount based on typical decimal places for the asset
@@ -504,17 +722,16 @@ export function generatePortfolioFromCryptoData(cryptoAssets: CryptoAsset[]): Po
     portfolioAssets.push({
       id: asset.id,
       name: asset.name,
-      symbol: symbol,
+      symbol: asset.symbol,
       amount,
-      formattedAmount: `${formatAmount(amount, asset.symbol)} ${symbol}`,
+      formattedAmount: `${formatAmount(amount, asset.symbol)} ${asset.symbol}`,
       value,
       formattedValue: formatValue(value),
-      change:
-        priceChangePercentage > 0 ? `+${priceChangePercentage.toFixed(1)}%` : `${priceChangePercentage.toFixed(1)}%`,
-      changePercent: priceChangePercentage,
-      positive: priceChangePercentage > 0,
+      change: asset.change,
+      changePercent: asset.changePercent,
+      positive: asset.positive,
       allocation,
-      image: asset.image,
+      image: asset.image || `/tokens/${asset.symbol.toLowerCase()}.png`,
     })
   })
 
@@ -594,7 +811,7 @@ export function calculatePortfolioStats(portfolioAssets: PortfolioAsset[]) {
     totalValue,
     formattedTotalValue: `${totalValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
     change24h,
-    formattedChange24h: `${change24h > 0 ? "+" : ""}${Math.abs(change24h).toLocaleString("en-US", { minimumFractionDigits: 2, minimumFractionDigits: 2 })}`,
+    formattedChange24h: `${change24h > 0 ? "+" : ""}${Math.abs(change24h).toLocaleString("en-US", { minimumFractionDigits: 2 })}`,
     changePercent24h,
     formattedChangePercent24h: `${changePercent24h > 0 ? "+" : ""}${changePercent24h.toFixed(1)}%`,
     positive24h: changePercent24h > 0,
@@ -603,5 +820,52 @@ export function calculatePortfolioStats(portfolioAssets: PortfolioAsset[]) {
       symbol: bestPerformer.symbol,
       change: bestPerformer.change,
     },
+  }
+}
+
+// Update the fetchMarketData function to handle async formatting
+export async function fetchMarketData(): Promise<FormattedCryptoAsset[]> {
+  try {
+    // Fetch data for all top tokens
+    const pairs = await Promise.all(
+      TOP_TOKENS.map(async (token) => {
+        try {
+          const response = await fetch(
+            `https://api.dexscreener.com/latest/dex/search?q=${token.symbol}`,
+            {
+              headers: {
+                Accept: "application/json",
+                "Cache-Control": "no-cache",
+              },
+              cache: "no-store",
+            }
+          )
+
+          if (!response.ok) {
+            console.error(`API error for ${token.symbol}: ${response.status}`)
+            return null
+          }
+
+          const data = await response.json()
+          return data.pairs?.[0] || null
+        } catch (error) {
+          console.error(`Error fetching ${token.symbol}:`, error)
+          return null
+        }
+      })
+    )
+
+    // Filter out failed requests and format the pairs
+    const validPairs = pairs.filter((pair): pair is DexScreenerPair => pair !== null)
+    
+    // Format each pair and wait for all to complete
+    const formattedPairs = validPairs.map(pair => formatDexScreenerPair(pair))
+    const formattedAssets = await Promise.all(formattedPairs)
+
+    // Filter out any null results from formatting
+    return formattedAssets.filter((asset): asset is FormattedCryptoAsset => asset !== null)
+  } catch (error) {
+    console.error("Error in fetchMarketData:", error)
+    return []
   }
 }

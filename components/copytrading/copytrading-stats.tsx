@@ -30,17 +30,20 @@ export function CopyTradingStats() {
   ]
 
   return (
-    <Card className="border-gray-200">
+    <Card className="border-border">
       <CardHeader className="pb-2">
-        <CardTitle className="text-lg font-semibold">Copy Trading Stats</CardTitle>
+        <CardTitle className="text-lg font-semibold text-foreground">Copy Trading Stats</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 gap-4">
           {stats.map((stat, index) => (
-            <div key={index} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-              <p className="text-xs text-gray-500">{stat.label}</p>
-              <p className="text-lg font-bold">{stat.value}</p>
-              <p className="text-xs text-green-600 flex items-center">
+            <div 
+              key={index} 
+              className="bg-muted/50 border border-border rounded-lg p-3 hover:bg-muted/80 transition-colors"
+            >
+              <p className="text-xs text-muted-foreground">{stat.label}</p>
+              <p className="text-lg font-bold text-foreground">{stat.value}</p>
+              <p className="text-xs text-emerald-500 dark:text-emerald-400 flex items-center">
                 <ArrowUp size={12} className="mr-1" />
                 {stat.change}
               </p>

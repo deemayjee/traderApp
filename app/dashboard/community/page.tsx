@@ -40,6 +40,7 @@ import { getRelativeTime } from "@/lib/utils/date-formatter"
 import { useRouter } from "next/navigation"
 import { SettingsService } from "@/lib/services/settings-service"
 import { NewsFeed } from "@/components/copytrading/news-feed"
+import Link from "next/link"
 
 // Extend the Post type if needed
 type ExtendedPost = {
@@ -167,7 +168,20 @@ export default function CommunityPage() {
         throw new Error('Failed to fetch comments')
       }
       
-      const comments = await response.json()
+      const commentsData = await response.json()
+      
+      // Process comments to ensure they have the right format
+      const processedComments = commentsData.map((comment: any) => ({
+        id: comment.id,
+        content: comment.content,
+        author: {
+          address: comment.walletAddress,
+          username: comment.author?.username || comment.username || comment.walletAddress?.slice(0, 6) + '...' + comment.walletAddress?.slice(-4),
+          avatar: comment.author?.avatar_url || comment.avatar_url
+        },
+        likes: Array.isArray(comment.likes) ? comment.likes : [],
+        createdAt: comment.createdAt || new Date().toISOString()
+      }))
       
       // Update post with comments and correct count
       setPosts((prevPosts) =>
@@ -175,8 +189,8 @@ export default function CommunityPage() {
           p.id === postId
             ? { 
                 ...p, 
-                commentsList: comments,
-                comments: comments.length // Update the count to match actual comments
+                commentsList: processedComments,
+                comments: processedComments.length
               }
             : p
         )
@@ -607,7 +621,12 @@ export default function CommunityPage() {
         body: JSON.stringify({ 
           postId, 
           content: comment.content,
-          walletAddress: user.address
+          walletAddress: user.address,
+          author: {
+            address: user.address,
+            username: profileData?.username || user.address.slice(0, 6) + '...' + user.address.slice(-4),
+            avatar: profileData?.avatar_url
+          }
         }),
       })
       
@@ -621,7 +640,14 @@ export default function CommunityPage() {
       setPosts((prevPosts) =>
         prevPosts.map((post) => {
           if (post.id === postId) {
-            const updatedCommentsList = [...(post.commentsList || []), newComment]
+            const updatedCommentsList = [...(post.commentsList || []), {
+              ...newComment,
+              author: {
+                address: user.address,
+                username: profileData?.username || user.address.slice(0, 6) + '...' + user.address.slice(-4),
+                avatar: profileData?.avatar_url
+              }
+            }]
             return {
               ...post,
               commentsList: updatedCommentsList,
@@ -753,6 +779,7 @@ export default function CommunityPage() {
 
       // Get user display info with fallbacks
       const getDisplayName = () => {
+        if (profileData?.username) return profileData.username;
         if (user?.name) return user.name;
         if (user?.address) {
           const shortAddress = `${user.address.substring(0, 4)}...${user.address.substring(user.address.length - 4)}`;
@@ -762,6 +789,7 @@ export default function CommunityPage() {
       };
       
       const getDisplayHandle = () => {
+        if (profileData?.username) return `@${profileData.username}`;
         if (user?.name) return `@${user.name.toLowerCase().replace(/\s+/g, "")}`;
         if (user?.address) return `@${user.address.substring(0, 8)}`;
         return "@anonymous";
@@ -769,7 +797,7 @@ export default function CommunityPage() {
       
       const displayName = getDisplayName();
       const displayHandle = getDisplayHandle();
-      const userAvatar = user?.avatar || "/placeholder.svg?height=40&width=40";
+      const userAvatar = profileData?.avatar_url || user?.avatar || "/placeholder.svg?height=40&width=40";
 
       // Create a new post as a repost
       const repost: ExtendedPost = {
@@ -873,27 +901,33 @@ export default function CommunityPage() {
     }
 
     try {
-      const response = await fetch(`/api/community/posts/${postId}/comments/${commentId}`, {
+      const response = await fetch(`/api/community/comments?commentId=${commentId}&walletAddress=${user.address}`, {
         method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ userId: user.address }),
       })
 
       if (!response.ok) {
-        throw new Error('Failed to delete comment')
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to delete comment')
       }
 
-      setPosts(posts.map(post => {
-        if (post.id === postId) {
-          return {
-            ...post,
-            comments: post.comments.filter(comment => comment.id !== commentId)
+      // Update the UI by removing the deleted comment
+      setPosts(prevPosts => 
+        prevPosts.map(post => {
+          if (post.id === postId) {
+            return {
+              ...post,
+              commentsList: post.commentsList?.filter(comment => comment.id !== commentId) || [],
+              comments: (post.commentsList?.filter(comment => comment.id !== commentId).length || 0)
+            }
           }
-        }
-        return post
-      }))
+          return post
+        })
+      )
+
+      toast({
+        title: "Success",
+        description: "Comment deleted successfully",
+      })
     } catch (error) {
       console.error('Error deleting comment:', error)
       toast({
@@ -978,11 +1012,11 @@ export default function CommunityPage() {
                 {user ? (
                   <Avatar>
                     <AvatarImage 
-                      src={user.avatar || "/placeholder.svg"} 
-                      alt={user.name || "User"} 
+                      src={profileData?.avatar_url || "/placeholder.svg"} 
+                      alt={profileData?.username || "User"} 
                     />
                     <AvatarFallback>
-                      {user.name?.charAt(0)?.toUpperCase() || user.address?.charAt(0)?.toUpperCase() || "U"}
+                      {profileData?.username?.charAt(0)?.toUpperCase() || user?.address?.charAt(0)?.toUpperCase() || "U"}
                     </AvatarFallback>
                   </Avatar>
                 ) : (
@@ -1012,11 +1046,36 @@ export default function CommunityPage() {
                         </Avatar>
                         <div className="flex-1">
                           <div className="flex items-center justify-between">
-                            <div>
-                              <h3 className="font-semibold">
-                                {typeof post.author === 'string' ? post.author : post.author.username}
-                              </h3>
-                              <p className="text-sm text-gray-500">{post.handle}</p>
+                            <div className="flex items-center gap-4">
+                              <div>
+                                <Link 
+                                  href={`/dashboard/profile/${post.walletAddress}`}
+                                  className="hover:underline"
+                                >
+                                  <h3 className="font-semibold">
+                                    {typeof post.author === 'string' ? post.author : post.author.username}
+                                  </h3>
+                                  <p className="text-sm text-gray-500">{post.handle}</p>
+                                </Link>
+                              </div>
+                              {post.walletAddress !== user?.address && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className={`${post.following ? "bg-muted" : ""}`}
+                                  onClick={() => handleFollowUser(post.id)}
+                                >
+                                  {post.following ? (
+                                    <>
+                                      <UserCheck size={14} className="mr-1" /> Following
+                                    </>
+                                  ) : (
+                                    <>
+                                      <UserPlus size={14} className="mr-1" /> Follow
+                                    </>
+                                  )}
+                                </Button>
+                              )}
                             </div>
                             {post.walletAddress === user?.address && (
                               <Button
@@ -1077,7 +1136,10 @@ export default function CommunityPage() {
                               onLikeComment={handleLikeComment}
                               onDeleteComment={handleDeleteComment}
                               currentUserAddress={user?.address}
-                              userProfile={profileData}
+                              profile={{
+                                username: profileData?.username || '',
+                                avatar_url: profileData?.avatar_url
+                              }}
                             />
                           )}
                         </div>
@@ -1101,20 +1163,20 @@ export default function CommunityPage() {
               <div className="flex flex-col items-center text-center">
                 <Avatar className="h-20 w-20 mb-3">
                   <AvatarImage 
-                    src={user?.avatar || "/placeholder.svg"} 
-                    alt={user?.name || "User"} 
+                    src={profileData?.avatar_url || "/placeholder.svg"} 
+                    alt={profileData?.username || "User"} 
                   />
                   <AvatarFallback className="text-xl">
-                    {user?.name?.charAt(0)?.toUpperCase() || user?.address?.charAt(0)?.toUpperCase() || "U"}
+                    {profileData?.username?.charAt(0)?.toUpperCase() || user?.address?.charAt(0)?.toUpperCase() || "U"}
                   </AvatarFallback>
                 </Avatar>
                 
                 <h3 className="font-semibold text-lg mb-1">
-                  {profileData?.username || user?.name || (user?.address ? `${user.address.substring(0, 4)}...${user.address.substring(user.address.length - 4)}` : "Anonymous User")}
+                  {profileData?.username || (user?.address ? `${user.address.substring(0, 4)}...${user.address.substring(user.address.length - 4)}` : "Anonymous User")}
                 </h3>
                 
                 <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                  {profileData?.username ? `@${profileData.username}` : (user?.address ? `${user.address.substring(0, 6)}...${user.address.substring(user.address.length - 4)}` : "@anonymous")}
+                  {profileData?.username ? `@${profileData.username.toLowerCase().replace(/\s+/g, "")}` : (user?.address ? `${user.address.substring(0, 6)}...${user.address.substring(user.address.length - 4)}` : "@anonymous")}
                 </p>
                 
                 <div className="flex items-center justify-center w-full mb-4">

@@ -52,7 +52,11 @@ export async function GET(req: Request) {
         content: comment.content,
         created_at: comment.created_at,
         time: getRelativeTime(comment.created_at),
-        author: username || `User ${walletAddress.substring(0, 4)}...${walletAddress.substring(-4)}`,
+        author: {
+          username: username || `User ${walletAddress.substring(0, 4)}...${walletAddress.substring(-4)}`,
+          address: walletAddress,
+          avatar: avatarUrl || '/placeholder.svg'
+        },
         handle: username 
           ? `@${username.toLowerCase().replace(/\s+/g, "")}` 
           : `@${walletAddress.substring(0, 8)}`,
@@ -125,7 +129,11 @@ export async function POST(req: Request) {
       content: comment.content,
       created_at: comment.created_at,
       time: 'Just now',
-      author: username || `User ${walletAddress.substring(0, 4)}...${walletAddress.substring(-4)}`,
+      author: {
+        username: username || `User ${walletAddress.substring(0, 4)}...${walletAddress.substring(-4)}`,
+        address: walletAddress,
+        avatar: avatarUrl || '/placeholder.svg'
+      },
       handle: username 
         ? `@${username.toLowerCase().replace(/\s+/g, "")}` 
         : `@${walletAddress.substring(0, 8)}`,
@@ -136,6 +144,69 @@ export async function POST(req: Request) {
     })
   } catch (error) {
     console.error('Error in POST /api/community/comments:', error)
+    return NextResponse.json(
+      { error: 'Internal Server Error' },
+      { status: 500 }
+    )
+  }
+}
+
+// Delete a comment
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url)
+    const commentId = searchParams.get('commentId')
+    const walletAddress = searchParams.get('walletAddress')
+    
+    if (!commentId || !walletAddress) {
+      return NextResponse.json(
+        { error: 'Comment ID and wallet address are required' },
+        { status: 400 }
+      )
+    }
+    
+    const supabase = createClient()
+    
+    // First verify the comment exists and belongs to the user
+    const { data: comment, error: fetchError } = await supabase
+      .from('community_comments')
+      .select('wallet_address')
+      .eq('id', commentId)
+      .single()
+    
+    if (fetchError) {
+      console.error('Error fetching comment:', fetchError)
+      return NextResponse.json(
+        { error: 'Comment not found' },
+        { status: 404 }
+      )
+    }
+    
+    // Check if the user owns the comment
+    if (comment.wallet_address !== walletAddress) {
+      return NextResponse.json(
+        { error: 'Unauthorized to delete this comment' },
+        { status: 403 }
+      )
+    }
+    
+    // Delete the comment
+    const { error: deleteError } = await supabase
+      .from('community_comments')
+      .delete()
+      .eq('id', commentId)
+    
+    if (deleteError) {
+      console.error('Error deleting comment:', deleteError)
+      return NextResponse.json(
+        { error: deleteError.message },
+        { status: 500 }
+      )
+    }
+    
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Error in DELETE /api/community/comments:', error)
     return NextResponse.json(
       { error: 'Internal Server Error' },
       { status: 500 }

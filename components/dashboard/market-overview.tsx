@@ -7,42 +7,47 @@ import type { FormattedCryptoAsset } from "@/lib/api/crypto-api"
 interface MarketOverviewProps {
   marketData: FormattedCryptoAsset[]
   className?: string
+  onTokenSelect?: (token: FormattedCryptoAsset) => void
 }
 
-export function MarketOverview({ marketData, className = "" }: MarketOverviewProps) {
+export function MarketOverview({ marketData, className = "", onTokenSelect }: MarketOverviewProps) {
   if (!marketData || marketData.length === 0) {
     return (
-      <Card className={`bg-white border-gray-200 ${className}`}>
+      <Card className={`bg-background border-border ${className}`}>
         <CardHeader className="pb-2">
           <CardTitle className="text-xl">Market Overview</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="py-8 text-center text-gray-500">No market data available</div>
+          <div className="py-8 text-center text-muted-foreground">No market data available</div>
         </CardContent>
       </Card>
     )
   }
 
   return (
-    <Card className={`bg-white border-gray-200 ${className}`}>
+    <Card className={`bg-background border-border ${className}`}>
       <CardHeader className="pb-2">
         <CardTitle className="text-xl">Market Overview</CardTitle>
       </CardHeader>
       <CardContent>
         <Table>
           <TableHeader>
-            <TableRow className="border-gray-200">
-              <TableHead className="text-gray-600">Asset</TableHead>
-              <TableHead className="text-gray-600">Price</TableHead>
-              <TableHead className="text-gray-600">24h Change</TableHead>
-              <TableHead className="text-gray-600 hidden md:table-cell">Market Cap</TableHead>
-              <TableHead className="text-gray-600 hidden md:table-cell">Volume</TableHead>
-              <TableHead className="text-gray-600">AI Sentiment</TableHead>
+            <TableRow className="border-border">
+              <TableHead className="text-muted-foreground">Asset</TableHead>
+              <TableHead className="text-muted-foreground">Price</TableHead>
+              <TableHead className="text-muted-foreground">24h Change</TableHead>
+              <TableHead className="text-muted-foreground hidden md:table-cell">Market Cap</TableHead>
+              <TableHead className="text-muted-foreground hidden md:table-cell">Volume</TableHead>
+              <TableHead className="text-muted-foreground">AI Sentiment</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {marketData.map((asset) => (
-              <TableRow key={asset.id} className="border-gray-200">
+              <TableRow 
+                key={asset.id} 
+                className="border-border cursor-pointer hover:bg-muted/50 transition-colors"
+                onClick={() => onTokenSelect?.(asset)}
+              >
                 <TableCell className="font-medium">
                   <div className="flex items-center">
                     <img
@@ -50,7 +55,7 @@ export function MarketOverview({ marketData, className = "" }: MarketOverviewPro
                       alt={asset.name}
                       className="w-6 h-6 mr-2 rounded-full"
                     />
-                    {asset.name} <span className="text-gray-500 ml-1">{asset.symbol}</span>
+                    {asset.name} <span className="text-muted-foreground ml-1">{asset.symbol}</span>
                   </div>
                 </TableCell>
                 <TableCell>${asset.price}</TableCell>
@@ -71,7 +76,7 @@ export function MarketOverview({ marketData, className = "" }: MarketOverviewPro
                           ? "border-green-200 text-green-600"
                           : asset.sentiment === "Bearish"
                             ? "border-red-200 text-red-600"
-                            : "border-gray-300 text-gray-600"
+                            : "border-border text-muted-foreground"
                       }
                     `}
                   >

@@ -15,9 +15,11 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useWalletAuth } from "@/components/auth/wallet-context"
 import { NotificationCenter } from "@/components/notification-center"
 import { ThemeToggleSimple } from "@/components/theme-toggle"
+import { useUserProfile } from "@/contexts/user-profile-context"
 
 export function Navbar() {
   const { user, isAuthenticated, logout } = useWalletAuth()
+  const { profile } = useUserProfile()
 
   return (
     <header className="border-b border-border bg-background">
@@ -61,15 +63,19 @@ export function Navbar() {
                 <Button variant="ghost" className="relative h-8 w-8 rounded-full">
                   <Avatar className="h-8 w-8">
                     <AvatarImage
-                      src="/placeholder.svg?height=32&width=32"
-                      alt="Wallet"
+                      src={profile?.avatar_url || "/placeholder.svg"}
+                      alt={profile?.username || "Wallet"}
                     />
-                    <AvatarFallback>W</AvatarFallback>
+                    <AvatarFallback>
+                      {profile?.username?.charAt(0)?.toUpperCase() || user?.address?.charAt(0)?.toUpperCase() || "W"}
+                    </AvatarFallback>
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuLabel>My Wallet</DropdownMenuLabel>
+                <DropdownMenuLabel>
+                  {profile?.username || "My Wallet"}
+                </DropdownMenuLabel>
                 <DropdownMenuItem className="text-xs opacity-50">
                   {user?.address ? `${user.address.substring(0, 4)}...${user.address.substring(user.address.length - 4)}` : 'Connected'}
                 </DropdownMenuItem>
@@ -105,10 +111,12 @@ export function Navbar() {
                 <Button variant="ghost" className="relative h-8 w-8 rounded-full">
                   <Avatar className="h-8 w-8">
                     <AvatarImage
-                      src="/placeholder.svg?height=32&width=32"
-                      alt="Wallet"
+                      src={profile?.avatar_url || "/placeholder.svg"}
+                      alt={profile?.username || "Wallet"}
                     />
-                    <AvatarFallback>W</AvatarFallback>
+                    <AvatarFallback>
+                      {profile?.username?.charAt(0)?.toUpperCase() || user?.address?.charAt(0)?.toUpperCase() || "W"}
+                    </AvatarFallback>
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>

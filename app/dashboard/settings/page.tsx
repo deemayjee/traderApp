@@ -91,6 +91,7 @@ export default function SettingsPage() {
 
   // Add state for file upload
   const [isUploading, setIsUploading] = useState(false)
+  const [isRemoving, setIsRemoving] = useState(false)
   const [fileInputRef, setFileInputRef] = useState<HTMLInputElement | null>(null)
 
   // Fetch the current profile when the component loads
@@ -556,6 +557,28 @@ export default function SettingsPage() {
     const file = event.target.files?.[0]
     if (!file || !publicKey) return
     
+    // Client-side validation
+    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+    const ALLOWED_FILE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    
+    if (file.size > MAX_FILE_SIZE) {
+      toast({
+        title: 'File too large',
+        description: 'Please upload an image smaller than 5MB',
+        variant: 'destructive',
+      })
+      return
+    }
+    
+    if (!ALLOWED_FILE_TYPES.includes(file.type)) {
+      toast({
+        title: 'Invalid file type',
+        description: 'Please upload a JPEG, PNG, GIF, or WebP image',
+        variant: 'destructive',
+      })
+      return
+    }
+    
     try {
       setIsUploading(true)
       
@@ -571,17 +594,34 @@ export default function SettingsPage() {
       })
       
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to upload profile picture')
+        const errorData = await response.json()
+        throw new Error(errorData.details || errorData.error || 'Failed to upload profile picture')
       }
       
       const result = await response.json()
+      console.log('Upload result:', result)
       
       // Update the profile data with the new avatar URL
-      setProfileData({
+      const updatedProfileData = {
         ...profileData,
         avatar_url: result.avatarUrl
-      })
+      }
+      console.log('Updated profile data:', updatedProfileData)
+      setProfileData(updatedProfileData)
+      
+      // Force a refresh of the profile data
+      const { data: refreshedProfile, error: refreshError } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('wallet_address', publicKey.toString())
+        .single()
+      
+      if (refreshError) {
+        console.error('Error refreshing profile:', refreshError)
+      } else {
+        console.log('Refreshed profile data:', refreshedProfile)
+        setProfileData(refreshedProfile)
+      }
       
       toast({
         title: 'Profile Picture Updated',
@@ -608,7 +648,7 @@ export default function SettingsPage() {
     if (!publicKey) return
     
     try {
-      setIsUploading(true)
+      setIsRemoving(true)
       
       // Call the API to remove the profile picture
       const response = await fetch(`/api/settings/profile-picture?walletAddress=${publicKey.toString()}`, {
@@ -638,7 +678,7 @@ export default function SettingsPage() {
         variant: 'destructive',
       })
     } finally {
-      setIsUploading(false)
+      setIsRemoving(false)
     }
   }
 
@@ -702,8 +742,12 @@ export default function SettingsPage() {
                 <CardContent className="space-y-6">
                   <div className="flex flex-col md:flex-row md:items-center gap-4">
                     <Avatar className="w-20 h-20">
-                      <AvatarImage src={profileData?.avatar_url || "/placeholder.svg"} alt="User" />
-                      <AvatarFallback>
+                      <AvatarImage 
+                        src={profileData?.avatar_url || "/placeholder.svg"} 
+                        alt={profileData?.username || "User"} 
+                        className="object-cover"
+                      />
+                      <AvatarFallback className="bg-muted">
                         {(profileData?.username?.charAt(0) || publicKey?.toString()?.charAt(0) || "U").toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
@@ -736,9 +780,9 @@ export default function SettingsPage() {
                           variant="outline" 
                           className="border-border text-red-600"
                           onClick={handleRemoveProfilePicture}
-                          disabled={isUploading || !profileData?.avatar_url}
+                          disabled={isRemoving || !profileData?.avatar_url}
                         >
-                          {isUploading ? (
+                          {isRemoving ? (
                             <>
                               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                               Removing...

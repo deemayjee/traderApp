@@ -31,6 +31,10 @@ interface PostCommentsProps {
   onLikeComment: (postId: string, commentId: string) => Promise<void>
   onDeleteComment: (postId: string, commentId: string) => Promise<void>
   currentUserAddress?: string
+  profile?: {
+    username: string
+    avatar_url?: string
+  }
 }
 
 export function PostComments({
@@ -39,12 +43,11 @@ export function PostComments({
   onAddComment,
   onLikeComment,
   onDeleteComment,
-  currentUserAddress
+  currentUserAddress,
+  profile
 }: PostCommentsProps) {
   const [newComment, setNewComment] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const { user } = useWalletAuth()
-  const { profile } = useUserProfile()
   const { toast } = useToast()
 
   const handleAddComment = async () => {
@@ -65,8 +68,8 @@ export function PostComments({
         content: newComment,
         author: {
           address: currentUserAddress,
-          username: currentUserAddress.slice(0, 6) + '...' + currentUserAddress.slice(-4),
-          avatar: undefined
+          username: profile?.username || currentUserAddress.slice(0, 6) + '...' + currentUserAddress.slice(-4),
+          avatar: profile?.avatar_url || undefined
         },
         likes: [],
         createdAt: new Date().toISOString()
@@ -153,9 +156,9 @@ export function PostComments({
         {comments.map((comment) => (
           <div key={comment.id} className="flex gap-2">
             <Avatar className="h-8 w-8">
-              <AvatarImage src={comment.author.avatar || undefined} />
+              <AvatarImage src={comment.author?.avatar || undefined} />
               <AvatarFallback>
-                {comment.author.username.charAt(0).toUpperCase()}
+                {comment.author?.username?.charAt(0)?.toUpperCase() || 'U'}
               </AvatarFallback>
             </Avatar>
             <div className="flex-1 space-y-1">
@@ -163,7 +166,7 @@ export function PostComments({
                 <div className="flex items-center gap-2">
                   <span className="font-medium">{comment.author.username}</span>
                   <span className="text-xs text-muted-foreground">
-                    {formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}
+                    {comment.createdAt ? formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true }) : 'Just now'}
                   </span>
                 </div>
                 {currentUserAddress === comment.author.address && (
@@ -187,13 +190,13 @@ export function PostComments({
                 >
                   <ThumbsUp
                     className={`h-4 w-4 ${
-                      comment.likes.includes(currentUserAddress || '')
+                      Array.isArray(comment.likes) && comment.likes.includes(currentUserAddress || '')
                         ? 'fill-blue-500 text-blue-500'
                         : ''
                     }`}
                   />
                   <span className="text-xs">
-                    {comment.likes.length} {comment.likes.length === 1 ? 'like' : 'likes'}
+                    {Array.isArray(comment.likes) ? comment.likes.length : 0} {Array.isArray(comment.likes) && comment.likes.length === 1 ? 'like' : 'likes'}
                   </span>
                 </Button>
               </div>

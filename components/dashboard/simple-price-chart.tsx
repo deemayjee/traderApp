@@ -16,8 +16,9 @@ import {
   Title,
   Tooltip,
   Legend,
+  Filler,
 } from "chart.js"
-import { type CryptoAsset } from "@/lib/api/crypto-api"
+import { fetchCryptoHistoricalData } from "@/lib/api/crypto-api"
 
 ChartJS.register(
   CategoryScale,
@@ -27,45 +28,80 @@ ChartJS.register(
   Title,
   Tooltip,
   Legend,
+  Filler,
 )
 
 interface SimplePriceChartProps {
   selectedCoin: string
-  timeRange: "1d" | "7d" | "30d" | "1y"
+  timeRange: "1m" | "5m" | "15m" | "1h" | "4h" | "1d" | "7d" | "30d"
+  onTimeRangeChange?: (range: "1m" | "5m" | "15m" | "1h" | "4h" | "1d" | "7d" | "30d") => void
 }
 
-export function SimplePriceChart({ selectedCoin, timeRange }: SimplePriceChartProps) {
-  const [timeframe, setTimeframe] = useState("1D")
-  const [selectedCoinData, setSelectedCoinData] = useState<CryptoAsset | null>(null)
+export function SimplePriceChart({ selectedCoin, timeRange, onTimeRangeChange }: SimplePriceChartProps) {
   const [priceData, setPriceData] = useState<number[]>([])
   const [labels, setLabels] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const timeframes = ["1H", "4H", "1D", "1W", "1M"]
-  const coins = [
-    { id: "bitcoin", symbol: "BTC", name: "Bitcoin" },
-    { id: "ethereum", symbol: "ETH", name: "Ethereum" },
-    { id: "solana", symbol: "SOL", name: "Solana" },
-    { id: "avalanche-2", symbol: "AVAX", name: "Avalanche" },
-  ]
+  const getTimeRangeFromTab = (tab: string): "1m" | "5m" | "15m" | "1h" | "4h" | "1d" | "7d" | "30d" => {
+    switch (tab) {
+      case "1M": return "1m"
+      case "5M": return "5m"
+      case "15M": return "15m"
+      case "1H": return "1h"
+      case "4H": return "4h"
+      case "1D": return "1d"
+      case "7D": return "7d"
+      case "30D": return "30d"
+      default: return "1d"
+    }
+  }
+
+  const getTabFromTimeRange = (range: string): string => {
+    switch (range) {
+      case "1m": return "1M"
+      case "5m": return "5M"
+      case "15m": return "15M"
+      case "1h": return "1H"
+      case "4h": return "4H"
+      case "1d": return "1D"
+      case "7d": return "7D"
+      case "30d": return "30D"
+      default: return "1D"
+    }
+  }
 
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true)
       try {
-        const response = await fetch(
-          `https://api.coingecko.com/api/v3/coins/${selectedCoin}/market_chart?vs_currency=usd&days=${
-            timeRange === "1d" ? 1 : timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : 365
-          }`,
-        )
-        const data = await response.json()
-        const prices = data.prices.map((price: [number, number]) => price[1])
-        const timestamps = data.prices.map((price: [number, number]) =>
-          new Date(price[0]).toLocaleDateString(),
-        )
-        setPriceData(prices)
-        setLabels(timestamps)
+        const { prices, volumes } = await fetchCryptoHistoricalData(selectedCoin, timeRange)
+        
+        // Format the data for the chart
+        const formattedPrices = prices.map(([timestamp, price]: [number, number]) => price)
+        const formattedLabels = prices.map(([timestamp]: [number, number]) => {
+          const date = new Date(timestamp)
+          switch (timeRange) {
+            case "1m":
+            case "5m":
+            case "15m":
+              return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+            case "1h":
+            case "4h":
+              return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            case "1d":
+              return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            case "7d":
+              return date.toLocaleDateString([], { weekday: 'short' })
+            case "30d":
+              return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
+            default:
+              return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
+          }
+        })
+
+        setPriceData(formattedPrices)
+        setLabels(formattedLabels)
         setError(null)
       } catch (err) {
         console.error("Error fetching coin data:", err)
@@ -86,8 +122,10 @@ export function SimplePriceChart({ selectedCoin, timeRange }: SimplePriceChartPr
     return price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   }
 
-  const priceChangePercent = selectedCoinData?.price_change_percentage_24h || 0
-  const isPriceUp = priceChangePercent > 0
+  const priceChange = priceData.length > 0 
+    ? ((priceData[priceData.length - 1] - priceData[0]) / priceData[0]) * 100 
+    : 0
+  const isPriceUp = priceChange > 0
 
   if (isLoading) {
     return (
@@ -119,69 +157,137 @@ export function SimplePriceChart({ selectedCoin, timeRange }: SimplePriceChartPr
         label: "Price",
         data: priceData,
         borderColor: isPriceUp ? "rgb(16, 185, 129)" : "rgb(239, 68, 68)",
-        tension: 0.1,
+        backgroundColor: isPriceUp 
+          ? "rgba(16, 185, 129, 0.1)"
+          : "rgba(239, 68, 68, 0.1)",
+        tension: 0.3,
+        fill: true,
+        pointRadius: 0,
+        borderWidth: 2,
       },
     ],
   }
 
   const options = {
     responsive: true,
+    maintainAspectRatio: false,
+    interaction: {
+      intersect: false,
+      mode: 'index' as const,
+    },
     plugins: {
       legend: {
         display: false,
       },
+      tooltip: {
+        enabled: true,
+        backgroundColor: 'rgba(17, 24, 39, 0.9)',
+        titleColor: 'rgb(156, 163, 175)',
+        bodyColor: 'rgb(243, 244, 246)',
+        padding: 12,
+        borderColor: 'rgba(75, 85, 99, 0.3)',
+        borderWidth: 1,
+        displayColors: false,
+        callbacks: {
+          title: (tooltipItems: any) => {
+            return labels[tooltipItems[0].dataIndex]
+          },
+          label: (context: any) => {
+            return `$${formatPrice(context.raw)}`
+          },
+        },
+      },
     },
     scales: {
+      x: {
+        grid: {
+          display: true,
+          color: 'rgba(75, 85, 99, 0.1)',
+          tickLength: 0,
+        },
+        ticks: {
+          font: {
+            size: 11,
+          },
+          color: 'rgb(156, 163, 175)',
+          maxRotation: 0,
+          autoSkip: true,
+          maxTicksLimit: 6,
+        },
+        border: {
+          display: false,
+        },
+      },
       y: {
-        beginAtZero: false,
+        position: 'right' as const,
+        grid: {
+          display: true,
+          color: 'rgba(75, 85, 99, 0.1)',
+          tickLength: 0,
+        },
+        ticks: {
+          font: {
+            size: 11,
+          },
+          color: 'rgb(156, 163, 175)',
+          callback: (value: any) => `$${formatPrice(value)}`,
+        },
+        border: {
+          display: false,
+        },
       },
     },
   }
 
   return (
-    <Card className="border-gray-200">
+    <Card className="border-border bg-background">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <div className="flex items-center">
           <CardTitle className="text-lg font-semibold mr-2">Price Chart</CardTitle>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="h-8 border-gray-200">
-                {selectedCoinData?.symbol || "BTC"} <ChevronDown className="ml-2 h-4 w-4" />
+              <Button variant="outline" size="sm" className="h-8 border-border">
+                {selectedCoin} <ChevronDown className="ml-2 h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              {coins.map((coin) => (
-                <DropdownMenuItem key={coin.id} onClick={() => setSelectedCoinData(coin as CryptoAsset)}>
-                  {coin.symbol} - {coin.name}
-                </DropdownMenuItem>
-              ))}
+              <DropdownMenuItem disabled>
+                Select a token from the Market Overview
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        <Tabs defaultValue="1D" value={timeframe} onValueChange={setTimeframe}>
-          <TabsList className="bg-gray-100 border border-gray-200">
-            {timeframes.map((tf) => (
-              <TabsTrigger key={tf} value={tf} className="data-[state=active]:bg-white">
-                {tf}
-              </TabsTrigger>
-            ))}
+        <Tabs 
+          defaultValue={getTabFromTimeRange(timeRange)} 
+          value={getTabFromTimeRange(timeRange)}
+          onValueChange={(value) => onTimeRangeChange?.(getTimeRangeFromTab(value))}
+        >
+          <TabsList className="bg-muted border border-border">
+            <TabsTrigger value="1M" className="data-[state=active]:bg-background">1M</TabsTrigger>
+            <TabsTrigger value="5M" className="data-[state=active]:bg-background">5M</TabsTrigger>
+            <TabsTrigger value="15M" className="data-[state=active]:bg-background">15M</TabsTrigger>
+            <TabsTrigger value="1H" className="data-[state=active]:bg-background">1H</TabsTrigger>
+            <TabsTrigger value="4H" className="data-[state=active]:bg-background">4H</TabsTrigger>
+            <TabsTrigger value="1D" className="data-[state=active]:bg-background">1D</TabsTrigger>
+            <TabsTrigger value="7D" className="data-[state=active]:bg-background">1W</TabsTrigger>
+            <TabsTrigger value="30D" className="data-[state=active]:bg-background">1M</TabsTrigger>
           </TabsList>
         </Tabs>
       </CardHeader>
       <CardContent>
         <div className="flex items-center justify-between mb-4">
           <div>
-            <p className="text-2xl font-bold">${formatPrice(priceData[priceData.length - 1])}</p>
-            <p className={`text-sm ${isPriceUp ? "text-green-600" : "text-red-600"}`}>
+            <p className="text-2xl font-bold text-foreground">${formatPrice(priceData[priceData.length - 1])}</p>
+            <p className={`text-sm ${isPriceUp ? "text-green-500" : "text-red-500"}`}>
               {isPriceUp ? "+" : ""}
-              {priceChangePercent.toFixed(2)}% (24h)
+              {priceChange.toFixed(2)}%
             </p>
           </div>
           <div className="flex space-x-2">
-            <Button variant="outline" size="sm" className="border-gray-200">
+            <Button variant="outline" size="sm" className="border-border">
               Indicators
             </Button>
-            <Button variant="outline" size="sm" className="border-gray-200">
+            <Button variant="outline" size="sm" className="border-border">
               Compare
             </Button>
           </div>
@@ -192,15 +298,15 @@ export function SimplePriceChart({ selectedCoin, timeRange }: SimplePriceChartPr
         </div>
 
         <div className="grid grid-cols-4 gap-4 mt-4">
-          {selectedCoinData && [
-            { label: "Open", value: formatPrice(selectedCoinData.current_price - selectedCoinData.price_change_24h) },
-            { label: "High", value: formatPrice(selectedCoinData.high_24h) },
-            { label: "Low", value: formatPrice(selectedCoinData.low_24h) },
-            { label: "Volume", value: `${(selectedCoinData.total_volume / 1000000000).toFixed(1)}B` },
+          {[
+            { label: "Open", value: formatPrice(priceData[0]) },
+            { label: "High", value: formatPrice(Math.max(...priceData)) },
+            { label: "Low", value: formatPrice(Math.min(...priceData)) },
+            { label: "Volume", value: "N/A" },
           ].map((item, index) => (
-            <div key={index} className="bg-gray-50 rounded-md p-3 border border-gray-200">
-              <p className="text-xs text-gray-500">{item.label}</p>
-              <p className="text-sm font-medium">${item.value}</p>
+            <div key={index} className="bg-muted/50 rounded-md p-3 border border-border">
+              <p className="text-xs text-muted-foreground">{item.label}</p>
+              <p className="text-sm font-medium text-foreground">${item.value}</p>
             </div>
           ))}
         </div>
