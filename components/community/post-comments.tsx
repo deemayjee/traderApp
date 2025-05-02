@@ -5,23 +5,18 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { ThumbsUp, Send, Trash2 } from "lucide-react"
-import { useWalletAuth } from "@/components/auth/wallet-context"
 import { useToast } from "@/components/ui/use-toast"
-import { useUserProfile } from "@/contexts/user-profile-context"
-import { getUserDisplayInfo } from "@/lib/utils/user-display"
 import { Input } from '@/components/ui/input'
 import { formatDistanceToNow } from 'date-fns'
 
-export interface Comment {
+interface Comment {
   id: string
   content: string
-  author: {
-    address: string
-    username: string
-    avatar?: string
-  }
-  likes: string[]
-  createdAt: string
+  author: string
+  avatar: string | null
+  created_at: string
+  likes: number
+  liked: boolean
 }
 
 interface PostCommentsProps {
@@ -30,11 +25,6 @@ interface PostCommentsProps {
   onAddComment: (postId: string, comment: Comment) => Promise<void>
   onLikeComment: (postId: string, commentId: string) => Promise<void>
   onDeleteComment: (postId: string, commentId: string) => Promise<void>
-  currentUserAddress?: string
-  profile?: {
-    username: string
-    avatar_url?: string
-  }
 }
 
 export function PostComments({
@@ -43,8 +33,6 @@ export function PostComments({
   onAddComment,
   onLikeComment,
   onDeleteComment,
-  currentUserAddress,
-  profile
 }: PostCommentsProps) {
   const [newComment, setNewComment] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -52,27 +40,17 @@ export function PostComments({
 
   const handleAddComment = async () => {
     if (!newComment.trim()) return
-    if (!currentUserAddress) {
-      toast({
-        title: "Error",
-        description: "Please connect your wallet first",
-        variant: "destructive"
-      })
-      return
-    }
 
     setIsSubmitting(true)
     try {
       const comment: Comment = {
         id: Date.now().toString(),
         content: newComment,
-        author: {
-          address: currentUserAddress,
-          username: profile?.username || currentUserAddress.slice(0, 6) + '...' + currentUserAddress.slice(-4),
-          avatar: profile?.avatar_url || undefined
-        },
-        likes: [],
-        createdAt: new Date().toISOString()
+        author: 'Anonymous',
+        avatar: null,
+        created_at: new Date().toISOString(),
+        likes: 0,
+        liked: false
       }
       await onAddComment(postId, comment)
       setNewComment('')
@@ -89,14 +67,6 @@ export function PostComments({
   }
 
   const handleLikeComment = async (commentId: string) => {
-    if (!currentUserAddress) {
-      toast({
-        title: "Error",
-        description: "Please connect your wallet first",
-        variant: "destructive"
-      })
-      return
-    }
     try {
       await onLikeComment(postId, commentId)
     } catch (error) {
@@ -110,14 +80,6 @@ export function PostComments({
   }
 
   const handleDeleteComment = async (commentId: string) => {
-    if (!currentUserAddress) {
-      toast({
-        title: "Error",
-        description: "Please connect your wallet first",
-        variant: "destructive"
-      })
-      return
-    }
     try {
       await onDeleteComment(postId, commentId)
       toast({
@@ -156,29 +118,25 @@ export function PostComments({
         {comments.map((comment) => (
           <div key={comment.id} className="flex gap-2">
             <Avatar className="h-8 w-8">
-              <AvatarImage src={comment.author?.avatar || undefined} />
-              <AvatarFallback>
-                {comment.author?.username?.charAt(0)?.toUpperCase() || 'U'}
-              </AvatarFallback>
+              <AvatarImage src={comment.avatar || undefined} />
+              <AvatarFallback>{comment.author.charAt(0).toUpperCase()}</AvatarFallback>
             </Avatar>
             <div className="flex-1 space-y-1">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="font-medium">{comment.author.username}</span>
+                  <span className="font-medium">{comment.author}</span>
                   <span className="text-xs text-muted-foreground">
-                    {comment.createdAt ? formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true }) : 'Just now'}
+                    {comment.created_at ? formatDistanceToNow(new Date(comment.created_at), { addSuffix: true }) : 'Just now'}
                   </span>
                 </div>
-                {currentUserAddress === comment.author.address && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6"
-                    onClick={() => handleDeleteComment(comment.id)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={() => handleDeleteComment(comment.id)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
               </div>
               <p className="text-sm">{comment.content}</p>
               <div className="flex items-center gap-4">
@@ -188,15 +146,9 @@ export function PostComments({
                   className="h-6 gap-1"
                   onClick={() => handleLikeComment(comment.id)}
                 >
-                  <ThumbsUp
-                    className={`h-4 w-4 ${
-                      Array.isArray(comment.likes) && comment.likes.includes(currentUserAddress || '')
-                        ? 'fill-blue-500 text-blue-500'
-                        : ''
-                    }`}
-                  />
+                  <ThumbsUp className="h-4 w-4" />
                   <span className="text-xs">
-                    {Array.isArray(comment.likes) ? comment.likes.length : 0} {Array.isArray(comment.likes) && comment.likes.length === 1 ? 'like' : 'likes'}
+                    {comment.likes} {comment.likes === 1 ? 'like' : 'likes'}
                   </span>
                 </Button>
               </div>

@@ -28,7 +28,6 @@ import { NotificationSettings } from "@/components/notification-settings"
 import { Checkbox } from "@/components/ui/checkbox"
 import { toast } from "@/components/ui/use-toast"
 import { SettingsService } from "@/lib/services/settings-service"
-import { useWallet, useConnection } from "@solana/wallet-adapter-react"
 import { cn } from "@/lib/utils"
 import { 
   UserProfile, 
@@ -38,12 +37,9 @@ import {
   DashboardPreferences 
 } from "@/lib/services/settings-service"
 import { supabase, supabaseAdmin } from "@/lib/supabase"
-import { PublicKey, SystemProgram, Transaction } from '@solana/web3.js'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 
 export default function SettingsPage() {
-  const { publicKey, sendTransaction } = useWallet()
-  const { connection } = useConnection()
   const [activeTab, setActiveTab] = useState("profile")
   const [showPassword, setShowPassword] = useState(false)
   const [compactMode, setCompactMode] = useState(false)
@@ -97,453 +93,34 @@ export default function SettingsPage() {
   // Fetch the current profile when the component loads
   useEffect(() => {
     const fetchProfile = async () => {
-      if (publicKey) {
-        try {
-          setIsLoading(true);
-          const walletAddress = publicKey.toString();
-          const profile = await settingsService.getProfile(walletAddress);
-          if (profile) {
-            setProfileData(profile);
-            console.log("Loaded profile:", profile);
-            
-            // Set all the form values from the profile
-            if (profile.timezone) {
-              setTimezoneValue(profile.timezone);
-            }
-            
-            if (profile.email) {
-              setEmailValue(profile.email);
-            }
-            
-            if (profile.username) {
-              setUsernameValue(profile.username);
-            }
-            
-            if (profile.bio) {
-              setBioValue(profile.bio);
-            }
-            
-            // Set the switch values from the profile
-            if (profile.public_profile !== undefined) {
-              setPublicProfileChecked(profile.public_profile);
-            }
-            
-            if (profile.show_trading_history !== undefined) {
-              setShowTradingHistoryChecked(profile.show_trading_history);
-            }
-            
-            if (profile.display_portfolio_value !== undefined) {
-              setDisplayPortfolioValueChecked(profile.display_portfolio_value);
-            }
-            
-            setProfileLoaded(true);
-          }
-        } catch (error) {
-          console.error("Error loading profile:", error);
-        } finally {
-          setIsLoading(false);
-        }
-      }
-    };
+      // TODO: Implement profile fetching
+      setProfileLoaded(true)
+    }
 
     const fetchNotificationSettings = async () => {
-      if (publicKey) {
-        try {
-          const walletAddress = publicKey.toString();
-          const { data: notificationSettings, error } = await supabase
-            .from('notification_settings')
-            .select('*')
-            .eq('wallet_address', walletAddress)
-            .single();
-
-          if (error) {
-            console.error('Error loading notification settings:', error);
-            return;
-          }
-
-          if (notificationSettings) {
-            console.log('Loaded notification settings:', notificationSettings);
-            setNotificationSettings({
-              inAppNotifications: notificationSettings.in_app_notifications,
-              emailNotifications: notificationSettings.email_notifications,
-              signalAlerts: notificationSettings.signal_alerts,
-              performanceAlerts: notificationSettings.performance_alerts,
-              priceAlerts: notificationSettings.price_alerts,
-              copyTradingUpdates: notificationSettings.copy_trading_updates,
-              communityMentions: notificationSettings.community_mentions
-            });
-          }
-        } catch (error) {
-          console.error('Error loading notification settings:', error);
-        }
-      }
-    };
+      // TODO: Implement notification settings fetching
+    }
 
     const fetchSubscriptionSettings = async () => {
-      if (publicKey) {
-        try {
-          const walletAddress = publicKey.toString();
-          console.log("Fetching subscription settings for wallet:", walletAddress);
-          
-          // Try regular client first
-          const { data, error } = await supabase
-            .from('subscription_settings')
-            .select('*')
-            .eq('wallet_address', walletAddress)
-            .single();
-            
-          console.log("Regular client fetch response:", { data: !!data, error });
-          
-          // If regular client fails, try admin client
-          if (error) {
-            console.log("Regular client fetch failed, trying admin client");
-            const { data: adminData, error: adminError } = await supabaseAdmin
-              .from('subscription_settings')
-              .select('*')
-              .eq('wallet_address', walletAddress)
-              .single();
-              
-            console.log("Admin client fetch response:", { data: !!adminData, error: adminError });
-            
-            if (adminError) {
-              console.log('No subscription settings found, user might be on free plan');
-              setPremiumActive(false);
-              setBillingHistory([]);
-              return;
-            }
-            
-            if (adminData) {
-              console.log('Loaded subscription settings from admin client:', adminData);
-              setPremiumActive(adminData.subscription_tier === 'premium');
-              
-              // Process billing history if it exists
-              if (adminData.billing_history && Array.isArray(adminData.billing_history)) {
-                const formattedHistory = adminData.billing_history.map((item: any) => ({
-                  date: item.date ? new Date(item.date).toLocaleDateString() : '',
-                  amount: item.amount || 0.02,
-                  txUrl: item.txUrl || '',
-                  status: item.status || 'paid'
-                }));
-                setBillingHistory(formattedHistory);
-              } else {
-                setBillingHistory([]);
-              }
-              return;
-            }
-          }
-          
-          if (data) {
-            console.log('Loaded subscription settings from regular client:', data);
-            setPremiumActive(data.subscription_tier === 'premium');
-            
-            // Process billing history if it exists
-            if (data.billing_history && Array.isArray(data.billing_history)) {
-              const formattedHistory = data.billing_history.map((item: any) => ({
-                date: item.date ? new Date(item.date).toLocaleDateString() : '',
-                amount: item.amount || 0.02,
-                txUrl: item.txUrl || '',
-                status: item.status || 'paid'
-              }));
-              setBillingHistory(formattedHistory);
-            } else {
-              setBillingHistory([]);
-            }
-          }
-        } catch (err) {
-          console.error('Error loading subscription settings:', err);
-          setPremiumActive(false);
-          setBillingHistory([]);
-        }
-      }
-    };
+      // TODO: Implement subscription settings fetching
+    }
 
     fetchProfile();
     fetchNotificationSettings();
     fetchSubscriptionSettings();
-  }, [publicKey]);
+  }, []);
 
   const handleSaveChanges = async (tab: string) => {
-    if (!publicKey) {
-      toast({
-        title: "Error",
-        description: "Please connect your wallet first",
-        variant: "destructive"
-      })
-      return
-    }
-
-    setIsSaving(true)
-    try {
-      const walletAddress = publicKey.toString()
-      let result
-
-      switch (tab) {
-        case "profile":
-          const profileData: Partial<UserProfile> = {
-            username: usernameValue,
-            bio: bioValue,
-            timezone: timezoneValue,
-            public_profile: publicProfileChecked,
-          };
-          result = await settingsService.updateProfile(walletAddress, profileData);
-          toast({
-            title: "Profile updated",
-            description: "Your profile has been updated successfully.",
-          });
-          break;
-        case "account":
-          const email = emailValue;
-          
-          console.log("Saving account with:", { email });
-
-          result = await settingsService.updateProfile(walletAddress, {
-            email
-          });
-          
-          break;
-        case "notifications":
-          console.log('Notification settings before save:', notificationSettings);
-
-          const notificationData: Partial<NotificationSettingsType> = {
-            in_app_notifications: notificationSettings.inAppNotifications,
-            email_notifications: notificationSettings.emailNotifications,
-            signal_alerts: notificationSettings.signalAlerts,
-            performance_alerts: notificationSettings.performanceAlerts,
-            price_alerts: notificationSettings.priceAlerts,
-            copy_trading_updates: notificationSettings.copyTradingUpdates,
-            community_mentions: notificationSettings.communityMentions
-          };
-
-          console.log('Saving notification settings:', notificationData);
-          result = await settingsService.updateNotificationSettings(walletAddress, notificationData);
-          
-          if (result) {
-            toast({
-              title: "Notifications updated",
-              description: "Your notification settings have been updated successfully.",
-            });
-          } else {
-            toast({
-              title: "Error",
-              description: "Failed to update notification settings.",
-              variant: "destructive"
-            });
-          }
-          break;
-        case "payment":
-          // Handle payment settings save
-          toast({
-            title: "Payment settings updated",
-            description: "Your payment settings have been updated successfully.",
-          });
-          break;
-        default:
-          throw new Error("Invalid tab selected")
-      }
-      
-      if (result) {
-        toast({
-          title: "Settings saved",
-          description: "Your changes have been saved successfully.",
-        })
-      } else {
-        throw new Error("Failed to save settings")
-      }
-    } catch (error) {
-      console.error("Error saving settings:", error)
-      toast({
-        title: "Error",
-        description: "Failed to save settings. Please try again.",
-        variant: "destructive"
-      })
-    } finally {
-      setIsSaving(false)
-    }
+    // TODO: Implement handleSaveChanges
   }
 
   const handleUpgradeToPremium = async () => {
-    if (!publicKey) {
-      toast({
-        title: "Wallet Required",
-        description: "Please connect your Solana wallet to upgrade.",
-        variant: "destructive"
-      });
-      return;
-    }
-    try {
-      // Solana transaction logic
-      const recipient = new PublicKey("4LaHaNBKAJ3GNRfWUTgXciaUuHbHEXjcP3gCoJ4EEyER");
-      const lamports = 0.02 * 1e9; // 0.02 SOL in lamports
-      const transaction = new Transaction().add(
-        SystemProgram.transfer({
-          fromPubkey: publicKey,
-          toPubkey: recipient,
-          lamports: lamports,
-        })
-      );
-      console.log("Starting transaction with wallet:", publicKey.toString());
-      const signature = await sendTransaction(transaction, connection);
-      console.log("Transaction signature:", signature);
-      
-      // Wait for confirmation
-      const confirmation = await connection.confirmTransaction(signature, 'confirmed');
-      console.log("Transaction confirmation:", confirmation);
-      
-      if (confirmation.value.err) {
-        throw new Error('Transaction failed or was not confirmed.');
-      }
-      
-      const currentDate = new Date().toISOString();
-      const billingEntry = {
-        date: currentDate,
-        amount: 0.02,
-        txUrl: `https://explorer.solana.com/tx/${signature}?cluster=mainnet-beta`,
-        status: 'paid'
-      };
-      
-      setPremiumActive(true);
-      setBillingHistory(prev => [billingEntry, ...prev]);
-      setShowCongratsModal(true);
-      toast({
-        title: "Premium Activated",
-        description: "You have successfully upgraded to the Premium Plan.",
-      });
-
-      // Update subscription_settings in the database
-      const walletAddress = publicKey.toString();
-      console.log("Updating subscription for wallet:", walletAddress);
-      
-      // First check if a record exists
-      const { data: existingRecord, error: fetchError } = await supabaseAdmin
-        .from('subscription_settings')
-        .select('*')
-        .eq('wallet_address', walletAddress)
-        .single();
-
-      if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 is "no rows returned"
-        console.error('Error fetching existing record:', fetchError);
-        throw fetchError;
-      }
-
-      if (existingRecord) {
-        // Update existing record with new billing history
-        const { error: updateError } = await supabaseAdmin
-          .from('subscription_settings')
-          .update({
-            subscription_tier: 'premium',
-            last_signature: signature,
-            last_active: currentDate,
-            updated_at: currentDate,
-            billing_history: [...(existingRecord.billing_history || []), billingEntry]
-          })
-          .eq('wallet_address', walletAddress);
-
-        if (updateError) {
-          console.error('Error updating subscription:', updateError);
-          throw updateError;
-        }
-      } else {
-        // Insert new record with billing history
-        const { error: insertError } = await supabaseAdmin
-          .from('subscription_settings')
-          .insert({
-            wallet_address: walletAddress,
-            subscription_tier: 'premium',
-            last_signature: signature,
-            last_active: currentDate,
-            created_at: currentDate,
-            updated_at: currentDate,
-            billing_history: [billingEntry]
-          });
-
-        if (insertError) {
-          console.error('Error inserting subscription:', insertError);
-          throw insertError;
-        }
-      }
-    } catch (err) {
-      console.error('Payment error:', err);
-      toast({
-        title: "Transaction Failed",
-        description: "There was an error processing your payment. Please ensure you have at least 0.02 SOL in your wallet.",
-        variant: "destructive"
-      });
-    }
-  };
+    // TODO: Implement handleUpgradeToPremium
+  }
 
   const handleCancelPremium = async () => {
-    if (!publicKey) {
-      toast({
-        title: "Wallet Required",
-        description: "Please connect your wallet to manage your subscription.",
-        variant: "destructive"
-      });
-      return;
-    }
-    
-    try {
-      const walletAddress = publicKey.toString();
-      console.log("Cancelling premium for wallet:", walletAddress);
-      
-      // Try regular client first
-      const { error } = await supabase
-        .from('subscription_settings')
-        .update({
-          subscription_tier: 'free',
-          updated_at: new Date().toISOString()
-        })
-        .eq('wallet_address', walletAddress);
-      
-      console.log("Regular client cancel response:", { error });
-        
-      if (error) {
-        console.log("Regular client cancel failed, trying admin client");
-        // Try admin client if regular client fails
-        const { error: adminError } = await supabaseAdmin
-          .from('subscription_settings')
-          .update({
-            subscription_tier: 'free',
-            updated_at: new Date().toISOString()
-          })
-          .eq('wallet_address', walletAddress);
-          
-        console.log("Admin client cancel response:", { error: adminError });
-        
-        if (adminError) {
-          console.error('Error cancelling subscription:', adminError);
-          toast({
-            title: "Error",
-            description: "There was an error cancelling your subscription. Please try again.",
-            variant: "destructive"
-          });
-          return;
-        }
-      }
-      
-      // Verify the update was successful
-      const { data: verifyData, error: verifyError } = await supabaseAdmin
-        .from('subscription_settings')
-        .select('subscription_tier')
-        .eq('wallet_address', walletAddress)
-        .single();
-        
-      console.log("Verification after cancel:", { data: verifyData, error: verifyError });
-      
-      // Update UI state
-      setPremiumActive(false);
-      toast({
-        title: "Premium Cancelled",
-        description: "You have cancelled your Premium Plan. You will remain on Premium until the end of your billing cycle.",
-      });
-    } catch (err) {
-      console.error('Error cancelling subscription:', err);
-      toast({
-        title: "Error",
-        description: "There was an error cancelling your subscription. Please try again.",
-        variant: "destructive"
-      });
-    }
-  };
+    // TODO: Implement handleCancelPremium
+  }
 
   // Add upload profile picture handler
   const handleUploadClick = () => {
@@ -554,132 +131,12 @@ export default function SettingsPage() {
   }
   
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file || !publicKey) return
-    
-    // Client-side validation
-    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
-    const ALLOWED_FILE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-    
-    if (file.size > MAX_FILE_SIZE) {
-      toast({
-        title: 'File too large',
-        description: 'Please upload an image smaller than 5MB',
-        variant: 'destructive',
-      })
-      return
-    }
-    
-    if (!ALLOWED_FILE_TYPES.includes(file.type)) {
-      toast({
-        title: 'Invalid file type',
-        description: 'Please upload a JPEG, PNG, GIF, or WebP image',
-        variant: 'destructive',
-      })
-      return
-    }
-    
-    try {
-      setIsUploading(true)
-      
-      // Create form data for the upload
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('walletAddress', publicKey.toString())
-      
-      // Call the API to upload the file
-      const response = await fetch('/api/settings/profile-picture', {
-        method: 'POST',
-        body: formData,
-      })
-      
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.details || errorData.error || 'Failed to upload profile picture')
-      }
-      
-      const result = await response.json()
-      console.log('Upload result:', result)
-      
-      // Update the profile data with the new avatar URL
-      const updatedProfileData = {
-        ...profileData,
-        avatar_url: result.avatarUrl
-      }
-      console.log('Updated profile data:', updatedProfileData)
-      setProfileData(updatedProfileData)
-      
-      // Force a refresh of the profile data
-      const { data: refreshedProfile, error: refreshError } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('wallet_address', publicKey.toString())
-        .single()
-      
-      if (refreshError) {
-        console.error('Error refreshing profile:', refreshError)
-      } else {
-        console.log('Refreshed profile data:', refreshedProfile)
-        setProfileData(refreshedProfile)
-      }
-      
-      toast({
-        title: 'Profile Picture Updated',
-        description: 'Your profile picture has been updated successfully.',
-      })
-    } catch (error) {
-      console.error('Error uploading profile picture:', error)
-      toast({
-        title: 'Upload Failed',
-        description: error instanceof Error ? error.message : 'Failed to upload profile picture',
-        variant: 'destructive',
-      })
-    } finally {
-      setIsUploading(false)
-      // Reset the file input
-      if (fileInputRef) {
-        fileInputRef.value = ''
-      }
-    }
+    // TODO: Implement handleFileChange
   }
   
   // Add remove profile picture handler
   const handleRemoveProfilePicture = async () => {
-    if (!publicKey) return
-    
-    try {
-      setIsRemoving(true)
-      
-      // Call the API to remove the profile picture
-      const response = await fetch(`/api/settings/profile-picture?walletAddress=${publicKey.toString()}`, {
-        method: 'DELETE',
-      })
-      
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to remove profile picture')
-      }
-      
-      // Update the profile data with no avatar URL
-      setProfileData({
-        ...profileData,
-        avatar_url: null
-      })
-      
-      toast({
-        title: 'Profile Picture Removed',
-        description: 'Your profile picture has been removed successfully.',
-      })
-    } catch (error) {
-      console.error('Error removing profile picture:', error)
-      toast({
-        title: 'Remove Failed',
-        description: error instanceof Error ? error.message : 'Failed to remove profile picture',
-        variant: 'destructive',
-      })
-    } finally {
-      setIsRemoving(false)
-    }
+    // TODO: Implement handleRemoveProfilePicture
   }
 
   return (
@@ -748,7 +205,7 @@ export default function SettingsPage() {
                         className="object-cover"
                       />
                       <AvatarFallback className="bg-muted">
-                        {(profileData?.username?.charAt(0) || publicKey?.toString()?.charAt(0) || "U").toUpperCase()}
+                        {(profileData?.username?.charAt(0) || "U").toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
                     <div className="space-y-2">

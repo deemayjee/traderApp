@@ -1,18 +1,21 @@
-import type { UserProfile } from "@/contexts/user-profile-context"
+interface UserProfile {
+  username: string
+  email: string
+  avatar_url: string | null
+}
 
-export function getUserDisplayInfo(profile: UserProfile | null, walletAddress?: string) {
-  const username = profile?.username
-  const avatar = profile?.avatar_url
-  const address = walletAddress || profile?.wallet_address
+export function getUserDisplayInfo(profile: UserProfile | null) {
+  if (!profile) {
+    return {
+      displayName: 'Anonymous',
+      avatarUrl: null,
+      email: null
+    }
+  }
 
   return {
-    name: username || (address ? `User ${address.substring(0, 4)}...${address.substring(address.length - 4)}` : "Anonymous"),
-    handle: username 
-      ? `@${username.toLowerCase().replace(/\s+/g, "")}` 
-      : address 
-        ? `@${address.substring(0, 8)}` 
-        : "@anonymous",
-    avatar: avatar || "/placeholder.svg",
-    walletAddress: address
+    displayName: profile.username || 'Anonymous',
+    avatarUrl: profile.avatar_url,
+    email: profile.email
   }
 } 

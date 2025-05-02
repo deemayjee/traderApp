@@ -1,5 +1,4 @@
 import type React from "react"
-import { AuthGuard } from "@/components/auth/auth-guard"
 import { Navbar } from "@/components/navbar"
 import { Footer } from "@/components/footer"
 import { DashboardSidebar } from "@/components/dashboard/dashboard-sidebar"
@@ -10,7 +9,6 @@ export default function CopyTradingLayout({
   children: React.ReactNode
 }) {
   return (
-    <AuthGuard>
       <div className="min-h-screen bg-background">
         <Navbar />
         <div className="flex">
@@ -19,6 +17,5 @@ export default function CopyTradingLayout({
         </div>
         <Footer />
       </div>
-    </AuthGuard>
   )
 }

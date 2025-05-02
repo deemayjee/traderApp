@@ -1,27 +1,24 @@
 // User Profile Settings
 export interface UserProfile {
   id: string
-  user_id: string
-  name?: string
-  email?: string
-  bio?: string
-  username?: string
-  avatar_url?: string
-  phone_number?: string
-  timezone: string
-  public_profile: boolean
+  username: string
+  email: string
+  avatar_url: string | null
+  bio: string | null
+  website: string | null
+  twitter: string | null
+  discord: string | null
+  telegram: string | null
   created_at: string
   updated_at: string
 }
 
 // User Preferences
 export interface UserPreferences {
-  id: string
-  wallet_address: string
-  theme: 'light' | 'dark'
-  last_signature?: string
-  last_active: string
-  nonce?: string
+  theme: 'light' | 'dark' | 'system'
+  notifications: boolean
+  email_notifications: boolean
+  push_notifications: boolean
   created_at: string
   updated_at: string
 }
@@ -41,18 +38,11 @@ export interface DashboardPreferences {
 
 // Notification Settings
 export interface NotificationSettings {
-  id: string
-  user_id: string
-  notifications: boolean
-  email_notifications: boolean
-  push_notifications: boolean
   price_alerts: boolean
-  signal_alerts: boolean
-  copy_trading_updates: boolean
-  community_mentions: boolean
-  marketing_communications: boolean
-  in_app_notifications: boolean
-  browser_notifications: boolean
+  market_updates: boolean
+  news_updates: boolean
+  social_mentions: boolean
+  email_frequency: 'instant' | 'daily' | 'weekly'
   created_at: string
   updated_at: string
 }

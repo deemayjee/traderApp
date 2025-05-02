@@ -7,10 +7,6 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { ArrowUp, ArrowDown, Plus, Download, Upload, BarChart3, PieChart as PieChartIcon, Loader2 } from "lucide-react"
-import { useWalletAuth } from "@/components/auth/wallet-context"
-import { useConnection } from '@solana/wallet-adapter-react'
-import { TOKEN_PROGRAM_ID } from '@solana/spl-token'
-import { PublicKey } from '@solana/web3.js'
 import { getTokenMetadata, getTokenPrice, calculateTokenValue, calculatePortfolioAllocation, TokenMetadata, TokenPrice } from "@/lib/api/token-data"
 import { PieChart } from "@/components/PieChart"
 
@@ -49,8 +45,6 @@ interface ProcessedTokenAccount extends TokenAccount {
 }
 
 export default function PortfolioPage() {
-  const { user, isAuthenticated } = useWalletAuth()
-  const { connection } = useConnection()
   const [assets, setAssets] = useState<ProcessedTokenAccount[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -59,21 +53,13 @@ export default function PortfolioPage() {
   // Fetch token holdings
   useEffect(() => {
     const fetchTokenHoldings = async () => {
-      if (!isAuthenticated || !user?.address) {
-        console.log("Wallet not connected:", { isAuthenticated, address: user?.address })
-        setIsLoading(false)
-        return
-      }
-
       try {
         setIsLoading(true)
         setError(null)
-        console.log("Fetching token holdings for address:", user.address)
-        const walletAddress = new PublicKey(user.address)
         
         // Get SOL balance
-        const solBalance = await connection.getBalance(walletAddress)
-        const solBalanceInSOL = solBalance / 1e9 // Convert lamports to SOL
+        const solBalance = 0 // TODO: Implement balance fetching
+        const solBalanceInSOL = 0 // Convert lamports to SOL
         console.log('SOL balance:', { lamports: solBalance, sol: solBalanceInSOL })
 
         // Get SOL price first
@@ -108,80 +94,12 @@ export default function PortfolioPage() {
           allocation: 0
         }
 
-        // Get all token accounts owned by the wallet
-        const tokenAccounts = await connection.getParsedTokenAccountsByOwner(walletAddress, {
-          programId: TOKEN_PROGRAM_ID,
-        })
-
-        console.log("Token accounts fetched:", tokenAccounts.value.length)
-
-        // Filter out accounts with zero balance
-        const tokenHoldings = tokenAccounts.value
-          .filter(account => {
-            const amount = account.account.data.parsed.info.tokenAmount
-            const hasBalance = amount.uiAmount > 0
-            if (!hasBalance) {
-              console.log("Filtered out zero balance account:", account.account.data.parsed.info.mint)
-            }
-            return hasBalance
-          })
-
-        console.log("Token holdings after filtering:", tokenHoldings.length)
-
-        // Process each token holding
-        const enrichedHoldings = await Promise.all(
-          tokenHoldings.map(async (account) => {
-            try {
-              const info = account.account.data.parsed.info
-              const mintAddress = info.mint
-              console.log("Processing token:", mintAddress)
-
-              const [metadata, price] = await Promise.all([
-                getTokenMetadata(mintAddress),
-                getTokenPrice(mintAddress)
-              ])
-
-              const tokenAmount = Number(info.tokenAmount.amount)
-              const value = calculateTokenValue(tokenAmount, price.price, metadata.decimals)
-
-              console.log("Token processed:", {
-                mint: mintAddress,
-                name: metadata.name,
-                amount: tokenAmount,
-                decimals: metadata.decimals,
-                price: price.price,
-                value: value
-              })
-
-              return {
-                mint: mintAddress,
-                amount: tokenAmount,
-                decimals: metadata.decimals,
-                metadata,
-                price,
-                value,
-                formattedAmount: `${info.tokenAmount.uiAmount} ${metadata.symbol}`,
-                formattedValue: `$${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-                change: `${price.priceChange24h > 0 ? '+' : ''}${price.priceChange24h.toFixed(2)}%`,
-                changePercent: price.priceChange24h,
-                positive: price.priceChange24h > 0,
-                allocation: 0
-              }
-            } catch (error) {
-              console.error("Error processing token:", error)
-              return null
-            }
-          })
-        )
-
-        const validHoldings = enrichedHoldings.filter((holding): holding is ProcessedTokenAccount => holding !== null)
-
         // Calculate total value including SOL
-        const totalValue = validHoldings.reduce((sum, asset) => sum + asset.value, 0) + solValue
+        const totalValue = solValue
         console.log('Total portfolio value:', totalValue)
 
         // Calculate allocations
-        const allAssets = [solTokenAccount, ...validHoldings].map(asset => ({
+        const allAssets = [solTokenAccount].map(asset => ({
           ...asset,
           allocation: totalValue > 0 ? (asset.value / totalValue) * 100 : 0
         }))
@@ -201,13 +119,13 @@ export default function PortfolioPage() {
         setIsLoading(false)
       } catch (err) {
         console.error("Error fetching token holdings:", err)
-        setError(err instanceof Error ? err.message : "Failed to fetch token holdings")
+        setError("Failed to fetch token holdings. Please try again later.")
         setIsLoading(false)
       }
     }
 
     fetchTokenHoldings()
-  }, [isAuthenticated, user?.address, connection])
+  }, [])
 
   // Filter assets based on active tab
   const filteredAssets = assets.filter((asset) => {
@@ -216,15 +134,6 @@ export default function PortfolioPage() {
     if (activeTab === "nfts") return false
     return true
   })
-
-  if (!isAuthenticated) {
-    return (
-      <div className="flex flex-col items-center justify-center h-64">
-        <p className="text-gray-500 mb-4">Please connect your wallet to view your portfolio</p>
-        <Button onClick={() => window.location.href = "/dashboard"}>Connect Wallet</Button>
-      </div>
-    )
-  }
 
   if (isLoading) {
     return (

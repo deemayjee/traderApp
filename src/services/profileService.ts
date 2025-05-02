@@ -1,123 +1,138 @@
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+import { supabase } from '@/lib/supabase'
 
 interface UserProfile {
-  id: string;
-  wallet_address: string;
-  display_name?: string;
-  bio?: string;
-  avatar_url?: string;
-  last_active: string;
-  created_at: string;
-  updated_at: string;
-  user_preferences?: {
-    theme: string;
-    language: string;
-    currency: string;
-  };
-  notification_settings?: {
-    email_notifications: boolean;
-    push_notifications: boolean;
-    price_alerts: boolean;
-    transaction_alerts: boolean;
-  };
-  trading_preferences?: {
-    default_exchange: string;
-    default_pair: string;
-    slippage_tolerance: number;
-  };
-  security_settings?: {
-    two_factor_auth: boolean;
-    session_timeout: number;
-  };
-  subscription_settings?: {
-    subscription_tier: string;
-    payment_methods: any[];
-  };
+  id: string
+  username: string
+  email: string
+  avatar_url: string | null
+  bio: string | null
+  website: string | null
+  twitter: string | null
+  discord: string | null
+  telegram: string | null
+  created_at: string
+  updated_at: string
 }
 
-export const updateProfile = async (profileData: Partial<UserProfile>) => {
-  try {
-    // Update the main profile data
-    const { data, error } = await supabase
-      .from('user_profiles')
-      .update({
-        display_name: profileData.display_name,
-        bio: profileData.bio,
-        avatar_url: profileData.avatar_url,
-        last_active: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', profileData.id)
-      .select(`
-        *,
-        user_preferences (*),
-        notification_settings (*),
-        trading_preferences (*),
-        security_settings (*),
-        subscription_settings (*)
-      `)
-      .single();
+interface UserPreferences {
+  theme: 'light' | 'dark' | 'system'
+  notifications: boolean
+  email_notifications: boolean
+  push_notifications: boolean
+  created_at: string
+  updated_at: string
+}
 
-    if (error) throw error;
+interface NotificationSettings {
+  price_alerts: boolean
+  market_updates: boolean
+  news_updates: boolean
+  social_mentions: boolean
+  email_frequency: 'instant' | 'daily' | 'weekly'
+  created_at: string
+  updated_at: string
+}
 
-    // Update user preferences if provided
-    if (profileData.user_preferences) {
-      const { error: preferencesError } = await supabase
-        .from('user_preferences')
-        .update(profileData.user_preferences)
-        .eq('wallet_address', data.wallet_address);
+export class ProfileService {
+  async getProfile(): Promise<UserProfile | null> {
+    try {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .single()
 
-      if (preferencesError) throw preferencesError;
+      if (error) throw error
+      return data
+    } catch (error) {
+      console.error('Error fetching profile:', error)
+      return null
     }
-
-    // Update notification settings if provided
-    if (profileData.notification_settings) {
-      const { error: notificationError } = await supabase
-        .from('notification_settings')
-        .update(profileData.notification_settings)
-        .eq('wallet_address', data.wallet_address);
-
-      if (notificationError) throw notificationError;
-    }
-
-    // Update trading preferences if provided
-    if (profileData.trading_preferences) {
-      const { error: tradingError } = await supabase
-        .from('trading_preferences')
-        .update(profileData.trading_preferences)
-        .eq('wallet_address', data.wallet_address);
-
-      if (tradingError) throw tradingError;
-    }
-
-    // Update security settings if provided
-    if (profileData.security_settings) {
-      const { error: securityError } = await supabase
-        .from('security_settings')
-        .update(profileData.security_settings)
-        .eq('wallet_address', data.wallet_address);
-
-      if (securityError) throw securityError;
-    }
-
-    // Update subscription settings if provided
-    if (profileData.subscription_settings) {
-      const { error: subscriptionError } = await supabase
-        .from('subscription_settings')
-        .update(profileData.subscription_settings)
-        .eq('wallet_address', data.wallet_address);
-
-      if (subscriptionError) throw subscriptionError;
-    }
-
-    return data;
-  } catch (error) {
-    console.error('Error updating profile:', error);
-    throw error;
   }
-}; 
+
+  async updateProfile(profile: Partial<UserProfile>): Promise<UserProfile | null> {
+    try {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .upsert({
+          ...profile,
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    } catch (error) {
+      console.error('Error updating profile:', error)
+      return null
+    }
+  }
+
+  async getPreferences(): Promise<UserPreferences | null> {
+    try {
+      const { data, error } = await supabase
+        .from('user_preferences')
+        .select('*')
+        .single()
+
+      if (error) throw error
+      return data
+    } catch (error) {
+      console.error('Error fetching preferences:', error)
+      return null
+    }
+  }
+
+  async updatePreferences(preferences: Partial<UserPreferences>): Promise<UserPreferences | null> {
+    try {
+      const { data, error } = await supabase
+        .from('user_preferences')
+        .upsert({
+          ...preferences,
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    } catch (error) {
+      console.error('Error updating preferences:', error)
+      return null
+    }
+  }
+
+  async getNotificationSettings(): Promise<NotificationSettings | null> {
+    try {
+      const { data, error } = await supabase
+        .from('notification_settings')
+        .select('*')
+        .single()
+
+      if (error) throw error
+      return data
+    } catch (error) {
+      console.error('Error fetching notification settings:', error)
+      return null
+    }
+  }
+
+  async updateNotificationSettings(settings: Partial<NotificationSettings>): Promise<NotificationSettings | null> {
+    try {
+      const { data, error } = await supabase
+        .from('notification_settings')
+        .upsert({
+          ...settings,
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    } catch (error) {
+      console.error('Error updating notification settings:', error)
+      return null
+    }
+  }
+} 

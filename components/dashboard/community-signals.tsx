@@ -5,55 +5,55 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { MessageSquare, ThumbsUp, Repeat2, Share2, UserCheck, UserPlus } from "lucide-react"
 
-export function CommunitySignals() {
-  const posts = [
-    {
-      id: 1,
-      author: "Alex Thompson",
-      handle: "@alexthompson",
-      avatar: "/placeholder.svg?height=40&width=40",
-      verified: true,
-      following: true,
-      time: "2h ago",
-      content:
-        "Just increased my $BTC position by 15%. Technical indicators suggest we might see a breakout above $45K in the next 48 hours. Keep an eye on the 4h chart.",
-      likes: 24,
-      comments: 7,
-      shares: 3,
-      accuracy: 92,
-    },
-    {
-      id: 2,
-      author: "Sarah Chen",
-      handle: "@sarahtrader",
-      avatar: "/placeholder.svg?height=40&width=40",
-      verified: true,
-      following: false,
-      time: "4h ago",
-      content:
-        "My SOL trade from last week is up 22%! The ecosystem growth continues to impress. Looking to take partial profits at $140 and let the rest ride.",
-      likes: 56,
-      comments: 12,
-      shares: 18,
-      accuracy: 87,
-    },
-    {
-      id: 3,
-      author: "Michael Rodriguez",
-      handle: "@cryptomike",
-      avatar: "/placeholder.svg?height=40&width=40",
-      verified: false,
-      following: true,
-      time: "6h ago",
-      content:
-        "$AVAX showing strong momentum after the recent partnership announcement. Setting up for a potential run to $40. My entry was at $32.50 with stops at $30.",
-      likes: 31,
-      comments: 5,
-      shares: 2,
-      accuracy: 79,
-    },
-  ]
+interface Post {
+  id: string
+  title: string
+  content: string
+  author: string
+  avatar: string | null
+  created_at: string
+  likes: number
+  liked: boolean
+  comments: number
+}
 
+const posts: Post[] = [
+  {
+    id: "1",
+    title: "Market Analysis",
+    content: "Bitcoin showing strong support at $45k level. RSI indicates potential breakout.",
+    author: "Alex Thompson",
+    avatar: null,
+    created_at: new Date().toISOString(),
+    likes: 24,
+    liked: false,
+    comments: 5
+  },
+  {
+    id: "2",
+    title: "Technical Analysis",
+    content: "Ethereum forming a bullish pattern on the 4H chart. Watch for a potential move above $3k.",
+    author: "Sarah Chen",
+    avatar: null,
+    created_at: new Date().toISOString(),
+    likes: 18,
+    liked: false,
+    comments: 3
+  },
+  {
+    id: "3",
+    title: "Market Update",
+    content: "DeFi tokens showing strength as TVL reaches new highs. Keep an eye on AAVE and UNI.",
+    author: "Michael Rodriguez",
+    avatar: null,
+    created_at: new Date().toISOString(),
+    likes: 15,
+    liked: false,
+    comments: 2
+  }
+]
+
+export function CommunitySignals() {
   return (
     <Card className="border-border">
       <CardHeader className="pb-2">
@@ -88,32 +88,27 @@ export function CommunitySignals() {
                     <div>
                       <div className="flex items-center">
                         <p className="font-medium">{post.author}</p>
-                        {post.verified && (
-                          <Badge variant="outline" className="ml-2 border-blue-200 text-blue-600 bg-blue-50 dark:bg-blue-500/20">
-                            Verified
-                          </Badge>
-                        )}
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        {post.handle} • {post.time}
+                        {post.author} • {new Date(post.created_at).toLocaleTimeString()}
                       </p>
                     </div>
                     <div className="flex items-center">
                       <Badge className="mr-2 bg-muted text-muted-foreground border-border">
-                        {post.accuracy}% Accuracy
+                        {Math.floor(Math.random() * 100)}% Accuracy
                       </Badge>
                       <Button
                         variant="outline"
                         size="sm"
-                        className={`h-8 ${post.following ? "border-border bg-muted" : "border-border"}`}
+                        className={`h-8 ${post.liked ? "border-border bg-muted" : "border-border"}`}
                       >
-                        {post.following ? (
+                        {post.liked ? (
                           <>
-                            <UserCheck size={14} className="mr-1" /> Following
+                            <UserCheck size={14} className="mr-1" /> Liked
                           </>
                         ) : (
                           <>
-                            <UserPlus size={14} className="mr-1" /> Follow
+                            <UserPlus size={14} className="mr-1" /> Like
                           </>
                         )}
                       </Button>
@@ -128,7 +123,7 @@ export function CommunitySignals() {
                       <MessageSquare size={16} className="mr-1" /> {post.comments}
                     </Button>
                     <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
-                      <Repeat2 size={16} className="mr-1" /> {post.shares}
+                      <Repeat2 size={16} className="mr-1" /> {Math.floor(Math.random() * 10)}
                     </Button>
                     <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
                       <Share2 size={16} />

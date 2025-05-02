@@ -4,12 +4,10 @@ import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { LayoutDashboard, LineChart, Wallet, Bell, Users, Settings, Brain, Copy, LogOut } from "lucide-react"
-import { useWalletAuth } from "@/components/auth/wallet-context"
+import { LayoutDashboard, LineChart, Bell, Users, Settings, Brain, Copy } from "lucide-react"
 
 export function DashboardSidebar() {
   const pathname = usePathname()
-  const { user, logout } = useWalletAuth()
 
   const menuItems = [
     {
@@ -25,7 +23,8 @@ export function DashboardSidebar() {
     {
       title: "Portfolio",
       href: "/dashboard/portfolio",
-      icon: <Wallet className="h-5 w-5" />,
+      icon: <LineChart className="h-5 w-5" />,
+      description: "View your portfolio performance and holdings"
     },
     {
       title: "Signals & Alerts",
@@ -64,28 +63,16 @@ export function DashboardSidebar() {
         </Link>
         <div className="flex items-center gap-3 mb-2">
           <Avatar className="h-10 w-10">
-            <AvatarImage src="/placeholder.svg?height=40&width=40" alt="Wallet" />
-            <AvatarFallback>W</AvatarFallback>
+            <AvatarImage src="/placeholder.svg?height=40&width=40" alt="User" />
+            <AvatarFallback>U</AvatarFallback>
           </Avatar>
           <div>
-            <p className="text-sm font-medium">Wallet</p>
+            <p className="text-sm font-medium">User</p>
             <p className="text-xs text-muted-foreground">
-              {user?.address 
-                ? `${user.address.substring(0, 4)}...${user.address.substring(user.address.length - 4)}` 
-                : 'Connected'}
+              Welcome to PallyTraders
             </p>
           </div>
         </div>
-        
-        <Button
-          onClick={() => logout()}
-          variant="outline"
-          size="sm"
-          className="w-full border-border text-muted-foreground hover:bg-muted hover:text-foreground justify-start mb-6"
-        >
-          <LogOut className="mr-2 h-4 w-4" />
-          Disconnect Wallet
-        </Button>
 
         <nav className="space-y-1">
           {menuItems.map((item) => (

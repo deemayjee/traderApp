@@ -19,7 +19,6 @@ import {
   ThumbsUp,
   Share2
 } from "lucide-react"
-import { useWalletAuth } from "@/components/auth/wallet-context"
 import { useToast } from "@/components/ui/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -51,7 +50,6 @@ interface Post {
 
 export default function ProfilePage() {
   const params = useParams()
-  const { user } = useWalletAuth()
   const { toast } = useToast()
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [posts, setPosts] = useState<Post[]>([])
@@ -139,7 +137,7 @@ export default function ProfilePage() {
   }, [activeTab])
 
   const handleFollow = async () => {
-    if (!user?.address || !profile) return
+    if (!profile) return
 
     try {
       const response = await fetch('/api/community/follow', {
@@ -149,7 +147,6 @@ export default function ProfilePage() {
         },
         body: JSON.stringify({
           followId: profile.wallet_address,
-          followerAddress: user.address,
         }),
       })
 
@@ -210,225 +207,175 @@ export default function ProfilePage() {
   }
 
   if (!profile) {
-    return <div>Profile not found</div>
+    return (
+      <div className="container mx-auto py-8">
+        <Card>
+          <CardContent className="py-8 text-center">
+            <p className="text-lg text-gray-500">Profile not found</p>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (
-    <div className="container mx-auto py-8 space-y-6">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column - Profile Info */}
-        <div className="lg:col-span-1 space-y-6">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex flex-col items-center text-center space-y-4">
-                <Avatar className="h-32 w-32">
-                  <AvatarImage 
-                    src={profile.avatar_url || "/placeholder.svg"} 
-                    alt={profile.username || "User"} 
-                  />
-                  <AvatarFallback>
-                    {profile.username?.charAt(0)?.toUpperCase() || profile.wallet_address.charAt(0).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-                
-                <div className="space-y-2">
-                  <div className="flex items-center justify-center gap-2">
-                    <h2 className="text-2xl font-bold">
-                      {profile.username || `User ${profile.wallet_address.substring(0, 4)}...${profile.wallet_address.substring(-4)}`}
-                    </h2>
-                    {profile.badges?.map((badge) => (
-                      <Badge key={badge} variant="secondary">{badge}</Badge>
-                    ))}
-                  </div>
-                  
-                  <p className="text-sm text-muted-foreground">
-                    {profile.username 
-                      ? `@${profile.username.toLowerCase().replace(/\s+/g, "")}` 
-                      : `@${profile.wallet_address.substring(0, 8)}`}
-                  </p>
-                  
-                  {profile.bio && (
-                    <p className="text-sm text-muted-foreground max-w-md mx-auto">{profile.bio}</p>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-4 text-sm text-muted-foreground">
+    <div className="container mx-auto py-8 space-y-4">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-4">
+            <Avatar className="h-20 w-20">
+              <AvatarImage src={profile.avatar_url || undefined} />
+              <AvatarFallback>{profile.username?.charAt(0).toUpperCase() || 'U'}</AvatarFallback>
+            </Avatar>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-bold">{profile.username || 'Anonymous'}</h1>
+                {profile.badges?.map((badge) => (
+                  <Badge key={badge} variant="secondary">
+                    {badge}
+                  </Badge>
+                ))}
+              </div>
+              <p className="text-gray-500">{profile.wallet_address}</p>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {profile.bio && <p className="text-gray-700">{profile.bio}</p>}
+            
+            <div className="flex items-center gap-4">
+              <Button
+                variant={profile.is_following ? "outline" : "default"}
+                onClick={handleFollow}
+              >
+                {profile.is_following ? (
+                  <>
+                    <UserCheck className="mr-2 h-4 w-4" />
+                    Following
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="mr-2 h-4 w-4" />
+                    Follow
+                  </>
+                )}
+              </Button>
+              
+              {(profile.website || profile.twitter) && (
+                <div className="flex items-center gap-2">
                   {profile.website && (
-                    <a href={profile.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-primary transition-colors">
-                      <Globe className="h-4 w-4" />
-                      <span>Website</span>
-                    </a>
+                    <Button variant="ghost" size="icon" asChild>
+                      <a href={profile.website} target="_blank" rel="noopener noreferrer">
+                        <Globe className="h-4 w-4" />
+                      </a>
+                    </Button>
                   )}
                   {profile.twitter && (
-                    <a href={`https://twitter.com/${profile.twitter}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-primary transition-colors">
-                      <Twitter className="h-4 w-4" />
-                      <span>@{profile.twitter}</span>
-                    </a>
-                  )}
-                  {profile.joined_date && (
-                    <span className="flex items-center gap-1">
-                      <Calendar className="h-4 w-4" />
-                      <span>Joined {format(new Date(profile.joined_date), 'MMMM yyyy')}</span>
-                    </span>
+                    <Button variant="ghost" size="icon" asChild>
+                      <a href={`https://twitter.com/${profile.twitter}`} target="_blank" rel="noopener noreferrer">
+                        <Twitter className="h-4 w-4" />
+                      </a>
+                    </Button>
                   )}
                 </div>
+              )}
+            </div>
 
-                {user?.address && user.address !== profile.wallet_address && (
-                  <div className="flex gap-2 pt-2">
-                    <Button variant="outline" onClick={() => window.location.href = `/messages/${profile.wallet_address}`}>
-                      <MessageSquare className="mr-2 h-4 w-4" />
-                      Message
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className={profile.is_following ? "bg-muted" : ""}
-                      onClick={handleFollow}
-                    >
-                      {profile.is_following ? (
-                        <>
-                          <UserCheck className="mr-2 h-4 w-4" />
-                          Following
-                        </>
-                      ) : (
-                        <>
-                          <UserPlus className="mr-2 h-4 w-4" />
-                          Follow
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                )}
+            <div className="flex items-center gap-6 text-sm text-gray-500">
+              <div className="flex items-center gap-1">
+                <Calendar className="h-4 w-4" />
+                <span>Joined {profile.joined_date ? format(new Date(profile.joined_date), 'MMM yyyy') : 'Unknown'}</span>
               </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6">
-              <div className="grid grid-cols-3 gap-4 text-center">
-                <div className="space-y-1">
-                  <p className="text-2xl font-semibold">{profile.posts_count}</p>
-                  <p className="text-sm text-muted-foreground">Posts</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-2xl font-semibold">{profile.followers_count}</p>
-                  <p className="text-sm text-muted-foreground">Followers</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-2xl font-semibold">{profile.following_count}</p>
-                  <p className="text-sm text-muted-foreground">Following</p>
-                </div>
+              <div className="flex items-center gap-1">
+                <Users className="h-4 w-4" />
+                <span>{profile.followers_count} followers</span>
               </div>
-            </CardContent>
-          </Card>
-        </div>
+              <div className="flex items-center gap-1">
+                <Users className="h-4 w-4" />
+                <span>{profile.following_count} following</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <MessageSquare className="h-4 w-4" />
+                <span>{profile.posts_count} posts</span>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
-        {/* Right Column - Content */}
-        <div className="lg:col-span-2 space-y-6">
-          <Card>
-            <CardContent className="pt-6">
-              <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="w-full justify-start">
-                  <TabsTrigger value="posts" className="flex items-center gap-2">
-                    <Activity className="h-4 w-4" />
-                    Posts
-                  </TabsTrigger>
-                  <TabsTrigger value="followers" className="flex items-center gap-2">
-                    <Users className="h-4 w-4" />
-                    Followers
-                  </TabsTrigger>
-                  <TabsTrigger value="following" className="flex items-center gap-2">
-                    <Users className="h-4 w-4" />
-                    Following
-                  </TabsTrigger>
-                </TabsList>
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList>
+          <TabsTrigger value="posts">Posts</TabsTrigger>
+          <TabsTrigger value="followers">Followers</TabsTrigger>
+          <TabsTrigger value="following">Following</TabsTrigger>
+        </TabsList>
 
-                <TabsContent value="posts" className="mt-6 space-y-4">
-                  {posts.map((post) => (
-                    <Card key={post.id} className="hover:bg-muted/50 transition-colors">
-                      <CardContent className="pt-6">
-                        <p className="text-sm whitespace-pre-wrap">{post.content}</p>
-                        <div className="flex items-center gap-4 mt-4 text-sm text-muted-foreground">
-                          <span className="flex items-center gap-1">
-                            <ThumbsUp className="h-4 w-4" />
-                            {post.likes}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <MessageSquare className="h-4 w-4" />
-                            {post.comments}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Share2 className="h-4 w-4" />
-                            {post.shares}
-                          </span>
-                          <span className="ml-auto">
-                            {post.created_at ? format(new Date(post.created_at), 'MMM d, yyyy') : ''}
-                          </span>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </TabsContent>
-
-                <TabsContent value="followers" className="mt-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {followers.map((follower) => (
-                      <Card key={follower.wallet_address} className="hover:bg-muted/50 transition-colors">
-                        <CardContent className="pt-6">
-                          <div className="flex items-center gap-4">
-                            <Avatar>
-                              <AvatarImage src={follower.avatar_url || "/placeholder.svg"} />
-                              <AvatarFallback>
-                                {follower.username?.charAt(0)?.toUpperCase() || follower.wallet_address.charAt(0).toUpperCase()}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <p className="font-semibold">
-                                {follower.username || `User ${follower.wallet_address.substring(0, 4)}...${follower.wallet_address.substring(-4)}`}
-                              </p>
-                              <p className="text-sm text-muted-foreground">
-                                {follower.bio?.substring(0, 50)}
-                                {follower.bio && follower.bio.length > 50 ? '...' : ''}
-                              </p>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+        <TabsContent value="posts" className="space-y-4">
+          {posts.map((post) => (
+            <Card key={post.id}>
+              <CardContent className="pt-6">
+                <p className="text-gray-700">{post.content}</p>
+                <div className="mt-4 flex items-center gap-4 text-sm text-gray-500">
+                  <div className="flex items-center gap-1">
+                    <ThumbsUp className="h-4 w-4" />
+                    <span>{post.likes} likes</span>
                   </div>
-                </TabsContent>
-
-                <TabsContent value="following" className="mt-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {following.map((followed) => (
-                      <Card key={followed.wallet_address} className="hover:bg-muted/50 transition-colors">
-                        <CardContent className="pt-6">
-                          <div className="flex items-center gap-4">
-                            <Avatar>
-                              <AvatarImage src={followed.avatar_url || "/placeholder.svg"} />
-                              <AvatarFallback>
-                                {followed.username?.charAt(0)?.toUpperCase() || followed.wallet_address.charAt(0).toUpperCase()}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <p className="font-semibold">
-                                {followed.username || `User ${followed.wallet_address.substring(0, 4)}...${followed.wallet_address.substring(-4)}`}
-                              </p>
-                              <p className="text-sm text-muted-foreground">
-                                {followed.bio?.substring(0, 50)}
-                                {followed.bio && followed.bio.length > 50 ? '...' : ''}
-                              </p>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+                  <div className="flex items-center gap-1">
+                    <MessageSquare className="h-4 w-4" />
+                    <span>{post.comments} comments</span>
                   </div>
-                </TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+                  <div className="flex items-center gap-1">
+                    <Share2 className="h-4 w-4" />
+                    <span>{post.shares} shares</span>
+                  </div>
+                  <div className="ml-auto">
+                    {format(new Date(post.created_at), 'MMM d, yyyy')}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </TabsContent>
+
+        <TabsContent value="followers" className="space-y-4">
+          {followers.map((follower) => (
+            <Card key={follower.wallet_address}>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-4">
+                  <Avatar>
+                    <AvatarImage src={follower.avatar_url || undefined} />
+                    <AvatarFallback>{follower.username?.charAt(0).toUpperCase() || 'U'}</AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <p className="font-medium">{follower.username || 'Anonymous'}</p>
+                    <p className="text-sm text-gray-500">{follower.wallet_address}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </TabsContent>
+
+        <TabsContent value="following" className="space-y-4">
+          {following.map((followed) => (
+            <Card key={followed.wallet_address}>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-4">
+                  <Avatar>
+                    <AvatarImage src={followed.avatar_url || undefined} />
+                    <AvatarFallback>{followed.username?.charAt(0).toUpperCase() || 'U'}</AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <p className="font-medium">{followed.username || 'Anonymous'}</p>
+                    <p className="text-sm text-gray-500">{followed.wallet_address}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </TabsContent>
+      </Tabs>
     </div>
   )
 } 

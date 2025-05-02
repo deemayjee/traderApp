@@ -5,29 +5,20 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogT
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { useWalletAuth } from "@/components/auth/wallet-context"
 import { ImageIcon, Link, AtSign, Hash } from "lucide-react"
 import { generateUUID } from "@/lib/utils/uuid"
 import { useToast } from "@/components/ui/use-toast"
 
 export interface Post {
   id: string
-  author: string | { username: string; email: string; avatar: string | null }
-  avatar: string
+  title: string
   content: string
-  timestamp?: Date
-  time?: string
+  author: string
+  avatar: string | null
+  created_at: string
   likes: number
+  liked: boolean
   comments: number
-  shares?: number
-  accuracy?: number
-  verified?: boolean
-  isAI?: boolean
-  isLiked?: boolean
-  handle?: string
-  userLiked?: boolean
-  userId?: string
-  walletAddress?: string
 }
 
 interface CreatePostDialogProps {
@@ -38,76 +29,28 @@ interface CreatePostDialogProps {
 
 export function CreatePostDialog({ onPostCreated, open, onOpenChange }: CreatePostDialogProps) {
   const [content, setContent] = useState("")
-  const { user } = useWalletAuth()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { toast } = useToast()
-  
-  // Generate username and handle from address if name is not available
-  const getDisplayName = () => {
-    if (user?.name) return user.name;
-    if (user?.address) {
-      return `${user.address.substring(0, 6)}...${user.address.substring(-4)}`;
-    }
-    return user?.address || "";
-  };
-  
-  const getDisplayHandle = () => {
-    if (user?.name) return `@${user.name.toLowerCase().replace(/\s+/g, "")}`;
-    if (user?.address) return `@${user.address.substring(0, 8)}`;
-    return `@${user?.address || ""}`;
-  };
 
   const handleSubmit = async () => {
     if (!content.trim()) return
 
-    // Check if user is authenticated
-    if (!user?.address) {
-      toast({
-        title: "Authentication required",
-        description: "Please connect your wallet to create a post",
-        variant: "destructive"
-      });
-      return;
-    }
-
     setIsSubmitting(true)
     
     try {
-      const response = await fetch('/api/community/posts', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          content,
-          walletAddress: user.address 
-        }),
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create post');
-      }
-      
-      const post = await response.json();
-      
-      // Format the post to match our interface
-      const formattedPost: Post = {
-        id: post.id,
-        author: post.author,
-        avatar: post.avatar,
-        content: post.content,
-        time: 'Just now',
-        likes: post.likes || 0,
-        comments: post.comments || 0,
-        shares: post.shares || 0,
-        handle: post.handle,
-        userLiked: false,
-        userId: user?.address,
-        walletAddress: user.address,
+      const newPost: Post = {
+        id: Date.now().toString(),
+        title: "",
+        content,
+        author: "Anonymous",
+        avatar: null,
+        created_at: new Date().toISOString(),
+        likes: 0,
+        liked: false,
+        comments: 0
       };
       
-      onPostCreated(formattedPost);
+      onPostCreated(newPost);
       setContent("");
       
       toast({
@@ -122,7 +65,7 @@ export function CreatePostDialog({ onPostCreated, open, onOpenChange }: CreatePo
       console.error('Error creating post:', error);
       toast({
         title: "Error creating post",
-        description: error instanceof Error ? error.message : "An error occurred while creating your post",
+        description: "An error occurred while creating your post",
         variant: "destructive"
       });
     } finally {
@@ -134,9 +77,9 @@ export function CreatePostDialog({ onPostCreated, open, onOpenChange }: CreatePo
     ? { open, onOpenChange } 
     : {};
     
-  const userAvatar = user?.avatar || "/placeholder.svg";
-  const userDisplayName = getDisplayName();
-  const userInitial = userDisplayName.charAt(0).toUpperCase();
+  const userAvatar = "/placeholder.svg";
+  const userDisplayName = "Anonymous";
+  const userInitial = "A";
 
   // Custom trigger element to be used when DialogTrigger is not needed
   const triggerElement = (

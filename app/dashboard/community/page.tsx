@@ -21,8 +21,7 @@ import {
   Trash2,
 } from "lucide-react"
 import { CreatePostDialog, type Post } from "@/components/community/create-post-dialog"
-import { PostComments, type Comment } from "@/components/community/post-comments"
-import { useWalletAuth } from "@/components/auth/wallet-context"
+import { PostComments } from "@/components/community/post-comments"
 import { useNotifications } from "@/contexts/notification-context"
 import {
   AlertDialog,
@@ -38,14 +37,23 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useToast } from "@/components/ui/use-toast"
 import { getRelativeTime } from "@/lib/utils/date-formatter"
 import { useRouter } from "next/navigation"
-import { SettingsService } from "@/lib/services/settings-service"
 import { NewsFeed } from "@/components/copytrading/news-feed"
 import Link from "next/link"
+
+interface Comment {
+  id: string
+  content: string
+  author: string
+  avatar: string | null
+  created_at: string
+  likes: number
+  liked: boolean
+}
 
 // Extend the Post type if needed
 type ExtendedPost = {
   id: string;
-  author: string | { username: string; email: string; avatar: string | null };
+  author: string;
   handle: string;
   avatar: string;
   verified?: boolean;
@@ -60,8 +68,6 @@ type ExtendedPost = {
   userLiked?: boolean;
   userRetweeted?: boolean;
   commentsList?: Comment[];
-  userId?: string;
-  walletAddress?: string;
 }
 
 export default function CommunityPage() {
@@ -79,35 +85,16 @@ export default function CommunityPage() {
     postsCount: 0
   })
   const [isLoading, setIsLoading] = useState(true)
-  const { user } = useWalletAuth()
+
   const { addNotification } = useNotifications()
   const { toast } = useToast()
   const router = useRouter()
-  const settingsService = new SettingsService()
-  const [profileData, setProfileData] = useState<any>(null)
-
-  // Load profile data
-  useEffect(() => {
-    const fetchProfile = async () => {
-      if (user?.address) {
-        try {
-          const profile = await settingsService.getProfile(user.address)
-          if (profile) {
-            setProfileData(profile)
-          }
-        } catch (error) {
-          console.error('Error fetching profile:', error)
-        }
-      }
-    }
-    fetchProfile()
-  }, [user?.address])
 
   // Load posts
   const fetchPosts = async () => {
     setIsLoading(true)
     try {
-      const response = await fetch(`/api/community/posts?tab=${activeTab}&walletAddress=${user?.address || ""}`)
+      const response = await fetch(`/api/community/posts?tab=${activeTab}`)
       if (!response.ok) {
         const errorData = await response.json()
         throw new Error(errorData.error || 'Failed to fetch posts')
@@ -125,10 +112,9 @@ export default function CommunityPage() {
         accuracy: post.accuracyPercentage,
         createdAt: post.createdAt,
         updatedAt: post.updatedAt,
-        walletAddress: post.walletAddress,
-        author: post.author,
-        handle: post.author?.username ? `@${post.author.username.toLowerCase().replace(/\s+/g, "")}` : null,
-        avatar: post.author?.avatar || "/placeholder.svg",
+        author: post.author || "Anonymous",
+        handle: post.author ? `@${post.author.toLowerCase().replace(/\s+/g, "")}` : "@anonymous",
+        avatar: "/placeholder.svg",
         time: post.createdAt ? getRelativeTime(post.createdAt) : "Just now",
         verified: false,
         following: false,
@@ -163,7 +149,7 @@ export default function CommunityPage() {
   // Helper function to load comments for a specific post
   const loadCommentsForPost = async (postId: string) => {
     try {
-      const response = await fetch(`/api/community/comments?postId=${postId}&walletAddress=${user?.address || ""}`)
+      const response = await fetch(`/api/community/comments?postId=${postId}`)
       if (!response.ok) {
         throw new Error('Failed to fetch comments')
       }
@@ -174,13 +160,11 @@ export default function CommunityPage() {
       const processedComments = commentsData.map((comment: any) => ({
         id: comment.id,
         content: comment.content,
-        author: {
-          address: comment.walletAddress,
-          username: comment.author?.username || comment.username || comment.walletAddress?.slice(0, 6) + '...' + comment.walletAddress?.slice(-4),
-          avatar: comment.author?.avatar_url || comment.avatar_url
-        },
-        likes: Array.isArray(comment.likes) ? comment.likes : [],
-        createdAt: comment.createdAt || new Date().toISOString()
+        author: comment.author || "Anonymous",
+        avatar: null,
+        created_at: comment.createdAt || new Date().toISOString(),
+        likes: comment.likes || 0,
+        liked: false
       }))
       
       // Update post with comments and correct count
@@ -202,33 +186,18 @@ export default function CommunityPage() {
 
   // Load user stats
   const fetchUserStats = async () => {
-    if (!user?.address) return
-    
     try {
-      // Get follow stats using wallet address
-      const response = await fetch(`/api/community/follow?walletAddress=${user.address}`)
+      const response = await fetch(`/api/community/follow`)
       if (!response.ok) {
         throw new Error('Failed to fetch user stats')
       }
-      const data = await response.json()
       
-      // Get post count using wallet address
-      const postsResponse = await fetch(`/api/community/posts/count?walletAddress=${user.address}`)
-      if (postsResponse.ok) {
-        const postsData = await postsResponse.json()
-        console.log('Posts count data:', postsData)
-        setUserStats({
-          followingCount: data.followingCount || 0,
-          followersCount: data.followerCount || 0,
-          postsCount: postsData.count || 0
-        })
-      } else {
-        setUserStats({
-          followingCount: data.followingCount || 0,
-          followersCount: data.followerCount || 0,
-          postsCount: 0
-        })
-      }
+      const data = await response.json()
+      setUserStats({
+        followingCount: data.followingCount || 0,
+        followersCount: data.followersCount || 0,
+        postsCount: data.postsCount || 0
+      })
     } catch (error) {
       console.error('Error fetching user stats:', error)
     }
@@ -287,63 +256,40 @@ export default function CommunityPage() {
     fetchPosts()
   }, [activeTab])
 
-  // Refetch user stats when user changes
-  useEffect(() => {
-    if (user?.address) {
-      fetchUserStats()
-    }
-  }, [user?.address])
-
   // Handle post creation
   const handlePostCreated = (newPost: Post) => {
-    // Get author name - handle both string and object formats
-    const authorName = typeof newPost.author === 'string' 
-      ? newPost.author 
-      : newPost.author?.username || 'Anonymous';
-      
-    // Convert Post to ExtendedPost
     const extendedPost: ExtendedPost = {
       id: newPost.id,
-      author: newPost.author,
-      handle: newPost.handle || `@${authorName.toLowerCase().replace(/\s+/g, "")}`,
-      avatar: newPost.avatar,
+      content: newPost.content,
+      author: "Anonymous",
+      handle: "@anonymous",
+      avatar: "/placeholder.svg",
+      time: "Just now",
       verified: false,
       following: false,
-      time: newPost.time || "Just now",
-      content: newPost.content,
-      likes: newPost.likes,
-      comments: newPost.comments,
-      shares: newPost.shares || 0,
+      likes: 0,
+      comments: 0,
+      shares: 0,
       userLiked: false,
       userRetweeted: false,
-      commentsList: [],
-      userId: newPost.userId,
-      walletAddress: newPost.walletAddress,
-    };
+      commentsList: []
+    }
     
-    setPosts((prevPosts) => [extendedPost, ...prevPosts]);
-    
-    // Fetch the latest post count
-    fetchUserStats();
+    setPosts((prevPosts) => [extendedPost, ...prevPosts])
+    setUserStats((prevStats) => ({
+      ...prevStats,
+      postsCount: prevStats.postsCount + 1
+    }))
     
     addNotification({
-      title: "Post Created",
-      message: "Your post has been published to the community",
-      type: "system",
-    });
+      type: 'system',
+      title: 'Post Created',
+      message: 'Your post has been published successfully'
+    })
   }
 
   // Handle like/unlike post
   const handleLikePost = async (postId: string) => {
-    if (!user?.address) {
-      toast({
-        title: "Authentication required",
-        description: "Please sign in to like posts",
-        variant: "destructive",
-      })
-      return
-    }
-    
     try {
       // Find the current post state
       const currentPost = posts.find(post => post.id === postId)
@@ -372,10 +318,7 @@ export default function CommunityPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          postId,
-          walletAddress: user.address 
-        }),
+        body: JSON.stringify({ postId }),
       })
       
       if (!response.ok) {
@@ -421,32 +364,23 @@ export default function CommunityPage() {
 
   // Handle follow/unfollow user
   const handleFollowUser = async (postId: string) => {
-    if (!user?.address) {
-      toast({
-        title: "Authentication required",
-        description: "Please connect your wallet to follow users",
-        variant: "destructive",
-      })
-      return
-    }
-    
-    // Find the post to get user wallet address
-    const post = posts.find(p => p.id === postId)
-    if (!post || !post.walletAddress) {
-      toast({
-        title: 'Error',
-        description: 'Cannot find user to follow',
-        variant: 'destructive',
-      })
-      return
-    }
-    
     try {
+      // Find the post
+      const post = posts.find(p => p.id === postId)
+      if (!post) {
+        toast({
+          title: 'Error',
+          description: 'Cannot find post',
+          variant: 'destructive',
+        })
+        return
+      }
+      
       // Optimistically update UI
-      setPosts((prevPosts) =>
-        prevPosts.map((p) =>
-          p.walletAddress === post.walletAddress
-            ? { ...p, following: !p.following }
+      setPosts(prevPosts => 
+        prevPosts.map(p => 
+          p.id === postId 
+            ? { ...p, following: !p.following } 
             : p
         )
       )
@@ -457,10 +391,7 @@ export default function CommunityPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          followId: post.walletAddress,
-          followerAddress: user.address 
-        }),
+        body: JSON.stringify({ postId }),
       })
       
       if (!response.ok) {
@@ -480,8 +411,8 @@ export default function CommunityPage() {
       addNotification({
         title: post.following ? "Unfollowed" : "Now Following",
         message: post.following 
-          ? `You unfollowed ${typeof post.author === 'string' ? post.author : post.author?.username || 'Anonymous'}`
-          : `You are now following ${typeof post.author === 'string' ? post.author : post.author?.username || 'Anonymous'}`,
+          ? `You unfollowed ${post.author}`
+          : `You are now following ${post.author}`,
         type: "system",
       })
     } catch (error) {
@@ -493,10 +424,10 @@ export default function CommunityPage() {
       })
       
       // Revert optimistic update
-      setPosts((prevPosts) =>
-        prevPosts.map((p) =>
-          p.walletAddress === post.walletAddress
-            ? { ...p, following: !p.following }
+      setPosts(prevPosts => 
+        prevPosts.map(p => 
+          p.id === postId 
+            ? { ...p, following: !p.following } 
             : p
         )
       )
@@ -505,27 +436,18 @@ export default function CommunityPage() {
 
   // Handle follow trader (from sidebar)
   const handleFollowTrader = async (traderHandle: string) => {
-    if (!user?.address) {
-      toast({
-        title: "Authentication required",
-        description: "Please connect your wallet to follow traders",
-        variant: "destructive",
-      })
-      return
-    }
-    
-    // Find the trader
-    const trader = topTraders.find(t => t.handle === traderHandle)
-    if (!trader || !trader.walletAddress) {
-      toast({
-        title: 'Error',
-        description: 'Cannot find trader to follow',
-        variant: 'destructive',
-      })
-      return
-    }
-    
     try {
+      // Find the trader
+      const trader = topTraders.find(t => t.handle === traderHandle)
+      if (!trader) {
+        toast({
+          title: 'Error',
+          description: 'Cannot find trader',
+          variant: 'destructive',
+        })
+        return
+      }
+      
       // Optimistically update UI
       setTopTraders((prevTraders) =>
         prevTraders.map((t) =>
@@ -541,10 +463,7 @@ export default function CommunityPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          followId: trader.walletAddress,
-          followerAddress: user.address 
-        }),
+        body: JSON.stringify({ traderHandle }),
       })
       
       if (!response.ok) {
@@ -602,15 +521,6 @@ export default function CommunityPage() {
 
   // Handle add comment
   const handleAddComment = async (postId: string, comment: Comment) => {
-    if (!user?.address) {
-      toast({
-        title: "Authentication required",
-        description: "Please sign in to comment",
-        variant: "destructive",
-      })
-      return
-    }
-    
     try {
       // Send API request
       const response = await fetch('/api/community/comments', {
@@ -621,11 +531,9 @@ export default function CommunityPage() {
         body: JSON.stringify({ 
           postId, 
           content: comment.content,
-          walletAddress: user.address,
           author: {
-            address: user.address,
-            username: profileData?.username || user.address.slice(0, 6) + '...' + user.address.slice(-4),
-            avatar: profileData?.avatar_url
+            username: "Anonymous",
+            avatar: "/placeholder.svg"
           }
         }),
       })
@@ -642,11 +550,8 @@ export default function CommunityPage() {
           if (post.id === postId) {
             const updatedCommentsList = [...(post.commentsList || []), {
               ...newComment,
-              author: {
-                address: user.address,
-                username: profileData?.username || user.address.slice(0, 6) + '...' + user.address.slice(-4),
-                avatar: profileData?.avatar_url
-              }
+              author: "Anonymous",
+              avatar: "/placeholder.svg"
             }]
             return {
               ...post,
@@ -669,94 +574,38 @@ export default function CommunityPage() {
 
   // Handle like comment
   const handleLikeComment = async (postId: string, commentId: string) => {
-    if (!user?.address) {
-      toast({
-        title: "Authentication required",
-        description: "Please sign in to like comments",
-        variant: "destructive",
-      })
-      return
-    }
-    
     try {
-      // Find the post and comment
-      const post = posts.find(p => p.id === postId)
-      if (!post?.commentsList) return
-      
-      const comment = post.commentsList.find(c => c.id === commentId)
-      if (!comment) return
-      
-      // Optimistically update UI
-      setPosts((prevPosts) =>
-        prevPosts.map((p) => {
-          if (p.id !== postId) return p
-          
-          const updatedComments = p.commentsList?.map(c => 
-            c.id === commentId
-              ? {
-                  ...c,
-                  likes: c.userLiked ? c.likes - 1 : c.likes + 1,
-                  userLiked: !c.userLiked,
-                }
-              : c
-          ) || []
-          
-          return {
-            ...p,
-            commentsList: updatedComments
-          }
-        })
-      )
-      
-      // Send API request
-      const response = await fetch('/api/community/likes', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          commentId,
-          walletAddress: user.address
-        }),
+      const response = await fetch(`/api/community/comments/${commentId}/like`, {
+        method: 'POST',
       })
       
       if (!response.ok) {
         throw new Error('Failed to like comment')
       }
       
-      const data = await response.json()
+      const updatedComment = await response.json()
       
-      // Update with actual count from server
+      // Update the comment in the posts state
       setPosts((prevPosts) =>
-        prevPosts.map((p) => {
-          if (p.id !== postId) return p
-          
-          const updatedComments = p.commentsList?.map(c => 
-            c.id === commentId
-              ? {
-                  ...c,
-                  likes: data.count,
-                  userLiked: data.liked,
-                }
-              : c
-          ) || []
-          
-          return {
-            ...p,
-            commentsList: updatedComments
-          }
-        })
+        prevPosts.map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                commentsList: (p.commentsList || []).map((c) =>
+                  c.id === commentId
+                    ? {
+                        ...c,
+                        likes: updatedComment.likes,
+                        liked: updatedComment.liked
+                      }
+                    : c
+                ),
+              }
+            : p
+        )
       )
     } catch (error) {
       console.error('Error liking comment:', error)
-      toast({
-        title: 'Error',
-        description: 'Failed to like comment. Please try again.',
-        variant: 'destructive',
-      })
-      
-      // Revert optimistic update (complex, so we'll just refetch comments)
-      handleExpandComments(postId)
     }
   }
 
@@ -777,34 +626,12 @@ export default function CommunityPage() {
           : post
       )
 
-      // Get user display info with fallbacks
-      const getDisplayName = () => {
-        if (profileData?.username) return profileData.username;
-        if (user?.name) return user.name;
-        if (user?.address) {
-          const shortAddress = `${user.address.substring(0, 4)}...${user.address.substring(user.address.length - 4)}`;
-          return `User ${shortAddress}`;
-        }
-        return "Anonymous User";
-      };
-      
-      const getDisplayHandle = () => {
-        if (profileData?.username) return `@${profileData.username}`;
-        if (user?.name) return `@${user.name.toLowerCase().replace(/\s+/g, "")}`;
-        if (user?.address) return `@${user.address.substring(0, 8)}`;
-        return "@anonymous";
-      };
-      
-      const displayName = getDisplayName();
-      const displayHandle = getDisplayHandle();
-      const userAvatar = profileData?.avatar_url || user?.avatar || "/placeholder.svg?height=40&width=40";
-
       // Create a new post as a repost
       const repost: ExtendedPost = {
         id: `repost-${Date.now()}`,
-        author: displayName,
-        handle: displayHandle,
-        avatar: userAvatar,
+        author: "Anonymous",
+        handle: "@anonymous",
+        avatar: "/placeholder.svg",
         verified: false,
         following: false,
         time: "Just now",
@@ -815,8 +642,6 @@ export default function CommunityPage() {
         userLiked: false,
         userRetweeted: false,
         commentsList: [],
-        userId: postToRepost.userId,
-        walletAddress: postToRepost.walletAddress,
       }
 
       addNotification({
@@ -853,22 +678,9 @@ export default function CommunityPage() {
   }
 
   const handleDeletePost = async (postId: string) => {
-    if (!user?.address) {
-      toast({
-        title: "Error",
-        description: "Please connect your wallet first",
-        variant: "destructive"
-      })
-      return
-    }
-
     try {
       const response = await fetch(`/api/community/posts/${postId}`, {
         method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ userId: user.address }),
       })
 
       if (!response.ok) {
@@ -891,17 +703,8 @@ export default function CommunityPage() {
   }
 
   const handleDeleteComment = async (postId: string, commentId: string) => {
-    if (!user?.address) {
-      toast({
-        title: "Error",
-        description: "Please connect your wallet first",
-        variant: "destructive"
-      })
-      return
-    }
-
     try {
-      const response = await fetch(`/api/community/comments?commentId=${commentId}&walletAddress=${user.address}`, {
+      const response = await fetch(`/api/community/comments?commentId=${commentId}`, {
         method: 'DELETE',
       })
 
@@ -1009,22 +812,10 @@ export default function CommunityPage() {
                 className="flex items-center gap-4 border border-gray-200 dark:border-gray-800 rounded-lg p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
                 onClick={() => setIsCreatePostOpen(true)}
               >
-                {user ? (
-                  <Avatar>
-                    <AvatarImage 
-                      src={profileData?.avatar_url || "/placeholder.svg"} 
-                      alt={profileData?.username || "User"} 
-                    />
-                    <AvatarFallback>
-                      {profileData?.username?.charAt(0)?.toUpperCase() || user?.address?.charAt(0)?.toUpperCase() || "U"}
-                    </AvatarFallback>
-                  </Avatar>
-                ) : (
-                  <Avatar>
-                    <AvatarImage src="/placeholder.svg" alt="User" />
-                    <AvatarFallback>U</AvatarFallback>
-                  </Avatar>
-                )}
+                <Avatar>
+                  <AvatarImage src="/placeholder.svg" alt="User" />
+                  <AvatarFallback>U</AvatarFallback>
+                </Avatar>
                 <span className="text-gray-500 dark:text-gray-400">What's on your mind?</span>
               </div>
 
@@ -1035,13 +826,11 @@ export default function CommunityPage() {
                       <div className="flex items-start space-x-3">
                         <Avatar>
                           <AvatarImage 
-                            src={typeof post.author === 'string' ? post.avatar : post.author.avatar || undefined} 
-                            alt={typeof post.author === 'string' ? post.author : post.author.username} 
+                            src={post.avatar} 
+                            alt={post.author} 
                           />
                           <AvatarFallback>
-                            {typeof post.author === 'string' 
-                              ? post.author.charAt(0).toUpperCase() 
-                              : post.author.username.charAt(0).toUpperCase()}
+                            {post.author.charAt(0).toUpperCase()}
                           </AvatarFallback>
                         </Avatar>
                         <div className="flex-1">
@@ -1049,44 +838,40 @@ export default function CommunityPage() {
                             <div className="flex items-center gap-4">
                               <div>
                                 <Link 
-                                  href={`/dashboard/profile/${post.walletAddress}`}
+                                  href={`/dashboard/profile/${post.id}`}
                                   className="hover:underline"
                                 >
                                   <h3 className="font-semibold">
-                                    {typeof post.author === 'string' ? post.author : post.author.username}
+                                    {post.author}
                                   </h3>
                                   <p className="text-sm text-gray-500">{post.handle}</p>
                                 </Link>
                               </div>
-                              {post.walletAddress !== user?.address && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className={`${post.following ? "bg-muted" : ""}`}
-                                  onClick={() => handleFollowUser(post.id)}
-                                >
-                                  {post.following ? (
-                                    <>
-                                      <UserCheck size={14} className="mr-1" /> Following
-                                    </>
-                                  ) : (
-                                    <>
-                                      <UserPlus size={14} className="mr-1" /> Follow
-                                    </>
-                                  )}
-                                </Button>
-                              )}
-                            </div>
-                            {post.walletAddress === user?.address && (
                               <Button
-                                variant="ghost"
+                                variant="outline"
                                 size="sm"
-                                className="text-red-500 hover:text-red-700"
-                                onClick={() => handleDeletePost(post.id)}
+                                className={`${post.following ? "bg-muted" : ""}`}
+                                onClick={() => handleFollowUser(post.id)}
                               >
-                                <Trash2 size={16} />
+                                {post.following ? (
+                                  <>
+                                    <UserCheck size={14} className="mr-1" /> Following
+                                  </>
+                                ) : (
+                                  <>
+                                    <UserPlus size={14} className="mr-1" /> Follow
+                                  </>
+                                )}
                               </Button>
-                            )}
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-red-500 hover:text-red-700"
+                              onClick={() => handleDeletePost(post.id)}
+                            >
+                              <Trash2 size={16} />
+                            </Button>
                           </div>
                           <p className="mt-2 text-gray-700 dark:text-gray-300">{post.content}</p>
                           <div className="mt-4 flex space-x-4">
@@ -1133,13 +918,8 @@ export default function CommunityPage() {
                               postId={post.id}
                               comments={post.commentsList || []}
                               onAddComment={handleAddComment}
-                              onLikeComment={handleLikeComment}
-                              onDeleteComment={handleDeleteComment}
-                              currentUserAddress={user?.address}
-                              profile={{
-                                username: profileData?.username || '',
-                                avatar_url: profileData?.avatar_url
-                              }}
+                              onLikeComment={(commentId) => handleLikeComment(post.id, commentId)}
+                              onDeleteComment={(commentId) => handleDeleteComment(post.id, commentId)}
                             />
                           )}
                         </div>
@@ -1163,20 +943,20 @@ export default function CommunityPage() {
               <div className="flex flex-col items-center text-center">
                 <Avatar className="h-20 w-20 mb-3">
                   <AvatarImage 
-                    src={profileData?.avatar_url || "/placeholder.svg"} 
-                    alt={profileData?.username || "User"} 
+                    src="/placeholder.svg" 
+                    alt="User" 
                   />
                   <AvatarFallback className="text-xl">
-                    {profileData?.username?.charAt(0)?.toUpperCase() || user?.address?.charAt(0)?.toUpperCase() || "U"}
+                    U
                   </AvatarFallback>
                 </Avatar>
                 
                 <h3 className="font-semibold text-lg mb-1">
-                  {profileData?.username || (user?.address ? `${user.address.substring(0, 4)}...${user.address.substring(user.address.length - 4)}` : "Anonymous User")}
+                  Anonymous User
                 </h3>
                 
                 <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                  {profileData?.username ? `@${profileData.username.toLowerCase().replace(/\s+/g, "")}` : (user?.address ? `${user.address.substring(0, 6)}...${user.address.substring(user.address.length - 4)}` : "@anonymous")}
+                  @anonymous
                 </p>
                 
                 <div className="flex items-center justify-center w-full mb-4">

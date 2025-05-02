@@ -5,9 +5,7 @@ import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { NotificationProvider } from "@/contexts/notification-context"
 import { Toaster } from "@/components/ui/toaster"
-import { SolanaWalletProvider } from "@/components/auth/wallet-provider"
-import { WalletAuthProvider } from "@/components/auth/wallet-context"
-import { UserProfileProvider } from "@/contexts/user-profile-context"
+import { PrivyAuthProvider } from "@/components/providers/privy-provider"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -25,18 +23,14 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.className} antialiased`}>
-        <SolanaWalletProvider>
-          <WalletAuthProvider>
-            <NotificationProvider>
-              <UserProfileProvider>
-                <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} disableTransitionOnChange>
-                  {children}
-                  <Toaster />
-                </ThemeProvider>
-              </UserProfileProvider>
-            </NotificationProvider>
-          </WalletAuthProvider>
-        </SolanaWalletProvider>
+        <NotificationProvider>
+          <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} disableTransitionOnChange>
+            <PrivyAuthProvider>
+              {children}
+            </PrivyAuthProvider>
+            <Toaster />
+          </ThemeProvider>
+        </NotificationProvider>
       </body>
     </html>
   )
