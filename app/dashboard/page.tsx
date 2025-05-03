@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { DashboardHeader } from "@/components/dashboard/dashboard-header"
 import { TopPerformers } from "@/components/dashboard/top-performers"
 import { SimplePriceChart } from "@/components/dashboard/simple-price-chart"
@@ -8,34 +8,145 @@ import { AIInsights } from "@/components/dashboard/ai-insights"
 import { PortfolioOverview } from "@/components/dashboard/portfolio-overview"
 import { TradingAlerts } from "@/components/dashboard/trading-alerts"
 import { MarketOverview } from "@/components/dashboard/market-overview"
-import { Loader2 } from "lucide-react"
+import { Loader2, Bell } from "lucide-react"
 import {
-  fetchCryptoMarkets,
-  generateAlertsFromCryptoData,
+  fetchBinanceTopTokens,
   generatePortfolioFromCryptoData,
   type FormattedCryptoAsset,
   type CryptoAlert,
   type PortfolioAsset,
-  type TimeRange,
-  fetchMarketData,
 } from "@/lib/api/crypto-api"
 import { CreateAlertDialog } from "@/components/dashboard/create-alert-dialog"
+import { AlertMonitor } from "@/lib/services/alert-monitor"
+import { PriceMonitor } from "@/lib/services/price-monitor"
+import { toast } from "@/components/ui/use-toast"
+import { alertStorage } from "@/lib/services/alert-storage"
+
+// Define the time range type that matches SimplePriceChart's expectations
+type ChartTimeRange = "1m" | "5m" | "15m" | "1h" | "4h" | "1d" | "7d" | "30d"
+
+// Define the insight type that matches AIInsights' expectations
+interface Insight {
+  symbol: string
+  insight: string
+  confidence: "high" | "medium" | "low"
+  timestamp: string
+}
+
+// Define the alert type that matches TradingAlerts' expectations
+interface TradingAlert {
+  id: string
+  type: "price" | "volume" | "trend"
+  symbol: string
+  condition: string
+  value: number
+  active: boolean
+  priority: "high" | "medium" | "low"
+  timestamp: string
+}
 
 export default function Dashboard() {
   const [marketData, setMarketData] = useState<FormattedCryptoAsset[]>([])
   const [selectedToken, setSelectedToken] = useState<FormattedCryptoAsset | null>(null)
-  const [timeRange, setTimeRange] = useState<"1m" | "5m" | "15m" | "1h" | "4h" | "1d" | "7d" | "30d" | "3m" | "6m" | "1y">("1d")
+  const [timeRange, setTimeRange] = useState<ChartTimeRange>("1d")
   const [alerts, setAlerts] = useState<CryptoAlert[]>([])
   const [portfolioAssets, setPortfolioAssets] = useState<PortfolioAsset[]>([])
   const [showCreateAlert, setShowCreateAlert] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const alertMonitorRef = useRef<AlertMonitor | null>(null)
+  const priceMonitorRef = useRef<PriceMonitor | null>(null)
+
+  // Load alerts from storage
+  useEffect(() => {
+    const loadAlerts = async () => {
+      try {
+        const storedAlerts = await alertStorage.getAlerts()
+        setAlerts(storedAlerts)
+      } catch (error) {
+        console.error("Error loading alerts:", error)
+      }
+    }
+    loadAlerts()
+  }, [])
+
+  // Memoize the price monitor callback to prevent unnecessary re-renders
+  const handlePriceUpdate = useCallback((updatedAssets: FormattedCryptoAsset[]) => {
+    setMarketData(prevData => {
+      // Only update if there are actual changes
+      const hasChanges = updatedAssets.some((newAsset, index) => {
+        const oldAsset = prevData[index]
+        return oldAsset && (
+          newAsset.price !== oldAsset.price ||
+          newAsset.change !== oldAsset.change ||
+          newAsset.volume !== oldAsset.volume
+        )
+      })
+
+      return hasChanges ? updatedAssets : prevData
+    })
+
+    // Update selected token only if it exists and has changed
+    if (selectedToken) {
+      const updatedToken = updatedAssets.find(asset => asset.symbol === selectedToken.symbol)
+      if (updatedToken && (
+        updatedToken.price !== selectedToken.price ||
+        updatedToken.change !== selectedToken.change
+      )) {
+        setSelectedToken(updatedToken)
+      }
+    }
+  }, [selectedToken])
+
+  useEffect(() => {
+    // Initialize alert monitor
+    alertMonitorRef.current = new AlertMonitor({
+      onAlertTriggered: (alert) => {
+        toast({
+          title: "Alert Triggered!",
+          description: `${alert.symbol} ${alert.type} alert: ${alert.condition} ${alert.value}`,
+          action: <Bell className="h-4 w-4" />,
+        })
+      }
+    })
+
+    // Initialize price monitor with memoized callback
+    priceMonitorRef.current = new PriceMonitor({
+      onPriceUpdate: handlePriceUpdate
+    })
+
+    return () => {
+      // Cleanup monitors
+      alertMonitorRef.current?.stop()
+      priceMonitorRef.current?.stop()
+    }
+  }, [handlePriceUpdate])
+
+  useEffect(() => {
+    // Update alert monitor when alerts change
+    if (alertMonitorRef.current) {
+      alertMonitorRef.current.updateAlerts(alerts)
+      const activeAlerts = alerts.filter(alert => alert.active)
+      if (activeAlerts.length > 0) {
+        alertMonitorRef.current.start(activeAlerts)
+      } else {
+        alertMonitorRef.current.stop()
+      }
+    }
+  }, [alerts])
+
+  useEffect(() => {
+    // Update price monitor when market data changes
+    if (priceMonitorRef.current) {
+      priceMonitorRef.current.updateAssets(marketData)
+    }
+  }, [marketData])
 
   useEffect(() => {
     async function loadMarketData() {
       try {
         setIsLoading(true)
-        const data = await fetchMarketData()
+        const data = await fetchBinanceTopTokens(10)
         setMarketData(data)
         
         // Set initial selected token
@@ -43,8 +154,7 @@ export default function Dashboard() {
           setSelectedToken(data[0])
         }
 
-        // Generate mock data
-        setAlerts(generateAlertsFromCryptoData(data))
+        // Remove the mock alerts generation
         setPortfolioAssets(generatePortfolioFromCryptoData(data))
         setError(null)
       } catch (err) {
@@ -62,7 +172,7 @@ export default function Dashboard() {
     setSelectedToken(token)
   }
 
-  const handleTimeRangeChange = (newRange: TimeRange) => {
+  const handleTimeRangeChange = (newRange: ChartTimeRange) => {
     setTimeRange(newRange)
   }
 
@@ -70,16 +180,57 @@ export default function Dashboard() {
     setShowCreateAlert(true)
   }
 
-  const handleDeleteAlert = (alertId: string) => {
-    setAlerts(alerts.filter((alert) => alert.id !== alertId))
+  const handleCreateAlertSubmit = async (newAlert: Omit<CryptoAlert, "id">) => {
+    try {
+      const alert: CryptoAlert = {
+        ...newAlert,
+        id: crypto.randomUUID(),
+        active: true,
+        timestamp: new Date().toISOString()
+      }
+      await alertStorage.saveAlert(alert)
+      setAlerts(prev => [...prev, alert])
+      setShowCreateAlert(false)
+    } catch (error) {
+      console.error("Error creating alert:", error)
+      toast({
+        title: "Error",
+        description: "Failed to create alert. Please try again.",
+        variant: "destructive"
+      })
+    }
   }
 
-  const handleToggleAlert = (alertId: string) => {
-    setAlerts(
-      alerts.map((alert) =>
+  const handleDeleteAlert = async (alertId: string) => {
+    try {
+      await alertStorage.deleteAlert(alertId)
+      setAlerts(prev => prev.filter(alert => alert.id !== alertId))
+    } catch (error) {
+      console.error("Error deleting alert:", error)
+      toast({
+        title: "Error",
+        description: "Failed to delete alert. Please try again.",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const handleToggleAlert = async (alertId: string) => {
+    try {
+      const updatedAlerts = alerts.map(alert => 
         alert.id === alertId ? { ...alert, active: !alert.active } : alert
       )
-    )
+      setAlerts(updatedAlerts)
+      // Update storage
+      await Promise.all(updatedAlerts.map(alert => alertStorage.saveAlert(alert)))
+    } catch (error) {
+      console.error("Error toggling alert:", error)
+      toast({
+        title: "Error",
+        description: "Failed to toggle alert. Please try again.",
+        variant: "destructive"
+      })
+    }
   }
 
   // Get top performers
@@ -95,6 +246,29 @@ export default function Dashboard() {
       onTimeRangeChange={handleTimeRangeChange}
     />
   ) : null
+
+  // Get only high-priority insights for dashboard preview
+  const highPriorityInsights = useMemo(() => {
+    // Only update insights if there's a significant change in market data
+    const significantChanges = marketData.filter(token => Math.abs(token.changePercent) > 5)
+    if (significantChanges.length === 0) return []
+
+    return significantChanges.slice(0, 3).map(token => ({
+      symbol: token.symbol,
+      insight: `Strong ${token.changePercent > 0 ? 'bullish' : 'bearish'} momentum detected`,
+      confidence: 'high' as const,
+      timestamp: new Date().toISOString()
+    }))
+  }, [marketData])
+
+  // Filter alerts to show only high-priority ones on dashboard
+  const highPriorityAlerts = useMemo(() => 
+    alerts.filter(alert => 
+      alert.priority === 'high' || 
+      (alert.priority === 'medium' && alert.type === 'price')
+    ).slice(0, 5), // Show max 5 alerts
+    [alerts]
+  )
 
   if (isLoading) {
     return (
@@ -129,17 +303,28 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="space-y-6">
-            <AIInsights />
+            <AIInsights insights={highPriorityInsights} isPreview={true} />
             <TradingAlerts 
-              alerts={alerts}
+              alerts={highPriorityAlerts}
               onCreateAlert={handleCreateAlert}
               onDeleteAlert={handleDeleteAlert}
               onToggleAlert={handleToggleAlert}
+              isPreview={true}
             />
           </div>
         </div>
 
-        <CreateAlertDialog open={showCreateAlert} onOpenChange={setShowCreateAlert} />
+        <CreateAlertDialog 
+          open={showCreateAlert} 
+          onOpenChange={setShowCreateAlert}
+          onCreateAlert={handleCreateAlertSubmit}
+          cryptoOptions={marketData.map(token => ({
+            id: token.id,
+            name: token.name,
+            symbol: token.symbol,
+            price: token.priceValue
+          }))}
+        />
       </>
     )
   }
@@ -164,17 +349,28 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="space-y-6">
-          <AIInsights />
+          <AIInsights insights={highPriorityInsights} isPreview={true} />
           <TradingAlerts 
-            alerts={alerts}
+            alerts={highPriorityAlerts}
             onCreateAlert={handleCreateAlert}
             onDeleteAlert={handleDeleteAlert}
             onToggleAlert={handleToggleAlert}
+            isPreview={true}
           />
         </div>
       </div>
 
-      <CreateAlertDialog open={showCreateAlert} onOpenChange={setShowCreateAlert} />
+      <CreateAlertDialog 
+        open={showCreateAlert} 
+        onOpenChange={setShowCreateAlert}
+        onCreateAlert={handleCreateAlertSubmit}
+        cryptoOptions={marketData.map(token => ({
+          id: token.id,
+          name: token.name,
+          symbol: token.symbol,
+          price: token.priceValue
+        }))}
+      />
     </>
   )
 }

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
@@ -8,9 +8,8 @@ import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { ArrowUp, ArrowDown, Plus, Download, Upload, BarChart3, PieChart as PieChartIcon, Loader2 } from "lucide-react"
 import { useWalletAuth } from "@/components/auth/wallet-context"
-import { useConnection } from '@solana/wallet-adapter-react'
+import { Connection, clusterApiUrl, PublicKey } from '@solana/web3.js'
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token'
-import { PublicKey } from '@solana/web3.js'
 import { getTokenMetadata, getTokenPrice, calculateTokenValue, calculatePortfolioAllocation, TokenMetadata, TokenPrice } from "@/lib/api/token-data"
 import { PieChart } from "@/components/PieChart"
 
@@ -50,30 +49,102 @@ interface ProcessedTokenAccount extends TokenAccount {
 
 export default function PortfolioPage() {
   const { user, isAuthenticated } = useWalletAuth()
-  const { connection } = useConnection()
+  // Create a direct Solana connection using Helius RPC if available
+  const connection = useMemo(() => new Connection(
+    process.env.NEXT_PUBLIC_SOLANA_RPC_URL || clusterApiUrl("mainnet-beta"),
+    {
+      commitment: 'confirmed',
+      confirmTransactionInitialTimeout: 60000,
+      httpHeaders: {
+        'Content-Type': 'application/json',
+      },
+      wsEndpoint: undefined,
+      fetchMiddleware: (url, options, fetch) => {
+        return new Promise((resolve) => {
+          setTimeout(() => {
+            resolve(fetch(url, options))
+          }, 100)
+        })
+      }
+    }
+  ), []) // Only create connection once
+
   const [assets, setAssets] = useState<ProcessedTokenAccount[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState("all")
 
+  // Memoize filtered assets to prevent unnecessary recalculations
+  const filteredAssets = useMemo(() => 
+    assets.filter((asset) => {
+      if (activeTab === "all") return true
+      if (activeTab === "tokens") return true
+      if (activeTab === "nfts") return false
+      return true
+    }),
+    [assets, activeTab]
+  )
+
+  // Memoize portfolio stats to prevent unnecessary recalculations
+  const portfolioStats = useMemo(() => {
+    const totalValue = assets.reduce((sum, asset) => sum + (asset.value || 0), 0)
+    const totalChange24h = assets.reduce((sum, asset) => {
+      const assetValue = asset.value || 0
+      const assetChange = asset.price?.priceChange24h || 0
+      return sum + (assetValue * (assetChange / 100))
+    }, 0)
+    const totalChangePercent24h = totalValue > 0 ? (totalChange24h / (totalValue - totalChange24h)) * 100 : 0
+
+    const bestPerformer = assets.length > 0
+      ? assets.reduce((best, asset) => 
+          ((asset.price?.priceChange24h || 0) > (best.price?.priceChange24h || 0)) ? asset : best
+        )
+      : null
+
+    return {
+      formattedTotalValue: `$${totalValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      formattedChange24h: `${totalChange24h >= 0 ? '+' : ''}$${Math.abs(totalChange24h).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      formattedChangePercent24h: `${totalChangePercent24h >= 0 ? '+' : ''}${Math.abs(totalChangePercent24h).toFixed(2)}%`,
+      positive24h: totalChangePercent24h > 0,
+      assetCount: assets.length,
+      bestPerformer: {
+        symbol: bestPerformer?.metadata?.symbol || "N/A",
+        change: bestPerformer ? `${(bestPerformer.price?.priceChange24h || 0) >= 0 ? '+' : ''}${Math.abs(bestPerformer.price?.priceChange24h || 0).toFixed(2)}%` : "0.00%",
+      },
+    }
+  }, [assets])
+
   // Fetch token holdings
   useEffect(() => {
+    let mounted = true // Track if component is mounted
+
     const fetchTokenHoldings = async () => {
       if (!isAuthenticated || !user?.address) {
         console.log("Wallet not connected:", { isAuthenticated, address: user?.address })
-        setIsLoading(false)
+        if (mounted) setIsLoading(false)
         return
       }
 
       try {
-        setIsLoading(true)
-        setError(null)
+        if (mounted) {
+          setIsLoading(true)
+          setError(null)
+        }
+
         console.log("Fetching token holdings for address:", user.address)
         const walletAddress = new PublicKey(user.address)
         
-        // Get SOL balance
-        const solBalance = await connection.getBalance(walletAddress)
-        const solBalanceInSOL = solBalance / 1e9 // Convert lamports to SOL
+        // Batch requests for SOL balance and token accounts
+        const [solBalance, tokenAccounts] = await Promise.all([
+          connection.getBalance(walletAddress),
+          connection.getParsedTokenAccountsByOwner(walletAddress, {
+            programId: TOKEN_PROGRAM_ID,
+          })
+        ])
+
+        if (!mounted) return // Don't update state if component unmounted
+
+        const solBalanceInSOL = solBalance / 1e9
         console.log('SOL balance:', { lamports: solBalance, sol: solBalanceInSOL })
 
         // Get SOL price first
@@ -108,11 +179,6 @@ export default function PortfolioPage() {
           allocation: 0
         }
 
-        // Get all token accounts owned by the wallet
-        const tokenAccounts = await connection.getParsedTokenAccountsByOwner(walletAddress, {
-          programId: TOKEN_PROGRAM_ID,
-        })
-
         console.log("Token accounts fetched:", tokenAccounts.value.length)
 
         // Filter out accounts with zero balance
@@ -128,51 +194,75 @@ export default function PortfolioPage() {
 
         console.log("Token holdings after filtering:", tokenHoldings.length)
 
-        // Process each token holding
-        const enrichedHoldings = await Promise.all(
-          tokenHoldings.map(async (account) => {
-            try {
-              const info = account.account.data.parsed.info
-              const mintAddress = info.mint
-              console.log("Processing token:", mintAddress)
+        // Process tokens in batches to avoid rate limits
+        const batchSize = 5
+        const enrichedHoldings: (ProcessedTokenAccount | null)[] = []
+        
+        for (let i = 0; i < tokenHoldings.length; i += batchSize) {
+          if (!mounted) return // Don't continue if component unmounted
+          
+          const batch = tokenHoldings.slice(i, i + batchSize)
+          
+          // Get all mint addresses in this batch
+          const mintAddresses = batch.map(account => account.account.data.parsed.info.mint)
+          
+          // Batch fetch metadata and prices for all tokens in this batch
+          const [metadataBatch, priceBatch] = await Promise.all([
+            Promise.all(mintAddresses.map(mint => getTokenMetadata(mint))),
+            Promise.all(mintAddresses.map(mint => getTokenPrice(mint)))
+          ])
+          
+          const batchResults = await Promise.all(
+            batch.map((account, index) => {
+              try {
+                const info = account.account.data.parsed.info
+                const mintAddress = info.mint
+                console.log("Processing token:", mintAddress)
 
-              const [metadata, price] = await Promise.all([
-                getTokenMetadata(mintAddress),
-                getTokenPrice(mintAddress)
-              ])
+                const metadata = metadataBatch[index]
+                const price = priceBatch[index]
 
-              const tokenAmount = Number(info.tokenAmount.amount)
-              const value = calculateTokenValue(tokenAmount, price.price, metadata.decimals)
+                const tokenAmount = Number(info.tokenAmount.amount)
+                const value = calculateTokenValue(tokenAmount, price.price, metadata.decimals)
 
-              console.log("Token processed:", {
-                mint: mintAddress,
-                name: metadata.name,
-                amount: tokenAmount,
-                decimals: metadata.decimals,
-                price: price.price,
-                value: value
-              })
+                console.log("Token processed:", {
+                  mint: mintAddress,
+                  name: metadata.name,
+                  amount: tokenAmount,
+                  decimals: metadata.decimals,
+                  price: price.price,
+                  value: value
+                })
 
-              return {
-                mint: mintAddress,
-                amount: tokenAmount,
-                decimals: metadata.decimals,
-                metadata,
-                price,
-                value,
-                formattedAmount: `${info.tokenAmount.uiAmount} ${metadata.symbol}`,
-                formattedValue: `$${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-                change: `${price.priceChange24h > 0 ? '+' : ''}${price.priceChange24h.toFixed(2)}%`,
-                changePercent: price.priceChange24h,
-                positive: price.priceChange24h > 0,
-                allocation: 0
+                return {
+                  mint: mintAddress,
+                  amount: tokenAmount,
+                  decimals: metadata.decimals,
+                  metadata,
+                  price,
+                  value,
+                  formattedAmount: `${info.tokenAmount.uiAmount} ${metadata.symbol}`,
+                  formattedValue: `$${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                  change: `${price.priceChange24h > 0 ? '+' : ''}${price.priceChange24h.toFixed(2)}%`,
+                  changePercent: price.priceChange24h,
+                  positive: price.priceChange24h > 0,
+                  allocation: 0
+                }
+              } catch (error) {
+                console.error("Error processing token:", error)
+                return null
               }
-            } catch (error) {
-              console.error("Error processing token:", error)
-              return null
-            }
-          })
-        )
+            })
+          )
+          enrichedHoldings.push(...batchResults)
+          
+          // Add delay between batches
+          if (i + batchSize < tokenHoldings.length) {
+            await new Promise(resolve => setTimeout(resolve, 1000))
+          }
+        }
+
+        if (!mounted) return // Don't update state if component unmounted
 
         const validHoldings = enrichedHoldings.filter((holding): holding is ProcessedTokenAccount => holding !== null)
 
@@ -196,26 +286,27 @@ export default function PortfolioPage() {
           }))
         })
 
-        setAssets(allAssets)
-        setError(null)
-        setIsLoading(false)
+        if (mounted) {
+          setAssets(allAssets)
+          setError(null)
+          setIsLoading(false)
+        }
       } catch (err) {
         console.error("Error fetching token holdings:", err)
-        setError(err instanceof Error ? err.message : "Failed to fetch token holdings")
-        setIsLoading(false)
+        if (mounted) {
+          setError(err instanceof Error ? err.message : "Failed to fetch token holdings")
+          setIsLoading(false)
+        }
       }
     }
 
     fetchTokenHoldings()
-  }, [isAuthenticated, user?.address, connection])
 
-  // Filter assets based on active tab
-  const filteredAssets = assets.filter((asset) => {
-    if (activeTab === "all") return true
-    if (activeTab === "tokens") return true
-    if (activeTab === "nfts") return false
-    return true
-  })
+    // Cleanup function
+    return () => {
+      mounted = false
+    }
+  }, [isAuthenticated, user?.address, connection])
 
   if (!isAuthenticated) {
     return (
@@ -243,33 +334,6 @@ export default function PortfolioPage() {
         </Button>
       </div>
     )
-  }
-
-  // Calculate portfolio stats
-  const totalValue = assets.reduce((sum, asset) => sum + (asset.value || 0), 0)
-  const totalChange24h = assets.reduce((sum, asset) => {
-    const assetValue = asset.value || 0
-    const assetChange = asset.price?.priceChange24h || 0
-    return sum + (assetValue * (assetChange / 100))
-  }, 0)
-  const totalChangePercent24h = totalValue > 0 ? (totalChange24h / (totalValue - totalChange24h)) * 100 : 0
-
-  const bestPerformer = assets.length > 0
-    ? assets.reduce((best, asset) => 
-        ((asset.price?.priceChange24h || 0) > (best.price?.priceChange24h || 0)) ? asset : best
-      )
-    : null
-
-  const portfolioStats = {
-    formattedTotalValue: `$${totalValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-    formattedChange24h: `${totalChange24h >= 0 ? '+' : ''}$${Math.abs(totalChange24h).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-    formattedChangePercent24h: `${totalChangePercent24h >= 0 ? '+' : ''}${Math.abs(totalChangePercent24h).toFixed(2)}%`,
-    positive24h: totalChangePercent24h > 0,
-    assetCount: assets.length,
-    bestPerformer: {
-      symbol: bestPerformer?.metadata?.symbol || "N/A",
-      change: bestPerformer ? `${(bestPerformer.price?.priceChange24h || 0) >= 0 ? '+' : ''}${Math.abs(bestPerformer.price?.priceChange24h || 0).toFixed(2)}%` : "0.00%",
-    },
   }
 
   return (
@@ -343,15 +407,15 @@ export default function PortfolioPage() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <p className="text-sm text-gray-500">Best Performer</p>
-              {bestPerformer?.positive ? (
+              {portfolioStats.bestPerformer.change.startsWith('+') ? (
                 <ArrowUp size={16} className="text-green-600" />
               ) : (
                 <ArrowDown size={16} className="text-red-600" />
               )}
             </div>
             <h2 className="text-2xl font-bold mt-2">{portfolioStats.bestPerformer.symbol}</h2>
-            <p className={`text-sm ${bestPerformer?.positive ? "text-green-600" : "text-red-600"} flex items-center mt-1`}>
-              {bestPerformer?.positive ? (
+            <p className={`text-sm ${portfolioStats.bestPerformer.change.startsWith('+') ? "text-green-600" : "text-red-600"} flex items-center mt-1`}>
+              {portfolioStats.bestPerformer.change.startsWith('+') ? (
                 <ArrowUp size={12} className="mr-1" />
               ) : (
                 <ArrowDown size={12} className="mr-1" />

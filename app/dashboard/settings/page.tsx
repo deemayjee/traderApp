@@ -28,7 +28,7 @@ import { NotificationSettings } from "@/components/notification-settings"
 import { Checkbox } from "@/components/ui/checkbox"
 import { toast } from "@/components/ui/use-toast"
 import { SettingsService } from "@/lib/services/settings-service"
-import { useWallet, useConnection } from "@solana/wallet-adapter-react"
+import { useWalletAuth } from "@/components/auth/wallet-context"
 import { cn } from "@/lib/utils"
 import { 
   UserProfile, 
@@ -42,8 +42,7 @@ import { PublicKey, SystemProgram, Transaction } from '@solana/web3.js'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 
 export default function SettingsPage() {
-  const { publicKey, sendTransaction } = useWallet()
-  const { connection } = useConnection()
+  const { user } = useWalletAuth()
   const [activeTab, setActiveTab] = useState("profile")
   const [showPassword, setShowPassword] = useState(false)
   const [compactMode, setCompactMode] = useState(false)
@@ -97,10 +96,10 @@ export default function SettingsPage() {
   // Fetch the current profile when the component loads
   useEffect(() => {
     const fetchProfile = async () => {
-      if (publicKey) {
+      if (user?.address) {
         try {
           setIsLoading(true);
-          const walletAddress = publicKey.toString();
+          const walletAddress = user.address;
           const profile = await settingsService.getProfile(walletAddress);
           if (profile) {
             setProfileData(profile);
@@ -147,9 +146,9 @@ export default function SettingsPage() {
     };
 
     const fetchNotificationSettings = async () => {
-      if (publicKey) {
+      if (user?.address) {
         try {
-          const walletAddress = publicKey.toString();
+          const walletAddress = user.address;
           const { data: notificationSettings, error } = await supabase
             .from('notification_settings')
             .select('*')
@@ -180,9 +179,9 @@ export default function SettingsPage() {
     };
 
     const fetchSubscriptionSettings = async () => {
-      if (publicKey) {
+      if (user?.address) {
         try {
-          const walletAddress = publicKey.toString();
+          const walletAddress = user.address;
           console.log("Fetching subscription settings for wallet:", walletAddress);
           
           // Try regular client first
@@ -260,10 +259,10 @@ export default function SettingsPage() {
     fetchProfile();
     fetchNotificationSettings();
     fetchSubscriptionSettings();
-  }, [publicKey]);
+  }, [user?.address]);
 
   const handleSaveChanges = async (tab: string) => {
-    if (!publicKey) {
+    if (!user?.address) {
       toast({
         title: "Error",
         description: "Please connect your wallet first",
@@ -274,7 +273,7 @@ export default function SettingsPage() {
 
     setIsSaving(true)
     try {
-      const walletAddress = publicKey.toString()
+      const walletAddress = user.address
       let result
 
       switch (tab) {
@@ -362,117 +361,38 @@ export default function SettingsPage() {
   }
 
   const handleUpgradeToPremium = async () => {
-    if (!publicKey) {
+    if (!user?.address) {
       toast({
         title: "Wallet Required",
-        description: "Please connect your Solana wallet to upgrade.",
-        variant: "destructive"
+        description: "Please connect your wallet to upgrade to premium.",
+        variant: "destructive",
       });
       return;
     }
-    try {
-      // Solana transaction logic
-      const recipient = new PublicKey("4LaHaNBKAJ3GNRfWUTgXciaUuHbHEXjcP3gCoJ4EEyER");
-      const lamports = 0.02 * 1e9; // 0.02 SOL in lamports
-      const transaction = new Transaction().add(
-        SystemProgram.transfer({
-          fromPubkey: publicKey,
-          toPubkey: recipient,
-          lamports: lamports,
-        })
-      );
-      console.log("Starting transaction with wallet:", publicKey.toString());
-      const signature = await sendTransaction(transaction, connection);
-      console.log("Transaction signature:", signature);
-      
-      // Wait for confirmation
-      const confirmation = await connection.confirmTransaction(signature, 'confirmed');
-      console.log("Transaction confirmation:", confirmation);
-      
-      if (confirmation.value.err) {
-        throw new Error('Transaction failed or was not confirmed.');
-      }
-      
-      const currentDate = new Date().toISOString();
-      const billingEntry = {
-        date: currentDate,
-        amount: 0.02,
-        txUrl: `https://explorer.solana.com/tx/${signature}?cluster=mainnet-beta`,
-        status: 'paid'
-      };
-      
-      setPremiumActive(true);
-      setBillingHistory(prev => [billingEntry, ...prev]);
-      setShowCongratsModal(true);
-      toast({
-        title: "Premium Activated",
-        description: "You have successfully upgraded to the Premium Plan.",
-      });
-
-      // Update subscription_settings in the database
-      const walletAddress = publicKey.toString();
-      console.log("Updating subscription for wallet:", walletAddress);
-      
-      // First check if a record exists
-      const { data: existingRecord, error: fetchError } = await supabaseAdmin
-        .from('subscription_settings')
-        .select('*')
-        .eq('wallet_address', walletAddress)
-        .single();
-
-      if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 is "no rows returned"
-        console.error('Error fetching existing record:', fetchError);
-        throw fetchError;
-      }
-
-      if (existingRecord) {
-        // Update existing record with new billing history
-        const { error: updateError } = await supabaseAdmin
-          .from('subscription_settings')
-          .update({
-            subscription_tier: 'premium',
-            last_signature: signature,
-            last_active: currentDate,
-            updated_at: currentDate,
-            billing_history: [...(existingRecord.billing_history || []), billingEntry]
-          })
-          .eq('wallet_address', walletAddress);
-
-        if (updateError) {
-          console.error('Error updating subscription:', updateError);
-          throw updateError;
-        }
-      } else {
-        // Insert new record with billing history
-        const { error: insertError } = await supabaseAdmin
-          .from('subscription_settings')
-          .insert({
-            wallet_address: walletAddress,
-            subscription_tier: 'premium',
-            last_signature: signature,
-            last_active: currentDate,
-            created_at: currentDate,
-            updated_at: currentDate,
-            billing_history: [billingEntry]
-          });
-
-        if (insertError) {
-          console.error('Error inserting subscription:', insertError);
-          throw insertError;
-        }
-      }
-    } catch (err) {
-      console.error('Payment error:', err);
-      toast({
-        title: "Transaction Failed",
-        description: "There was an error processing your payment. Please ensure you have at least 0.02 SOL in your wallet.",
-        variant: "destructive"
-      });
-    }
+    // TODO: Update this logic to use Privy's wallet API for Solana transactions if needed
+    /*
+    const recipient = new PublicKey("YOUR_RECIPIENT_ADDRESS");
+    const lamports = 1000000; // Example amount
+    const transaction = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: new PublicKey(user.address), // This expects a PublicKey, not a string
+        toPubkey: recipient,
+        lamports: lamports,
+      })
+    );
+    // You need to use Privy's wallet API to sign/send this transaction
+    // const signature = await sendTransaction(transaction, connection);
+    // console.log("Transaction signature:", signature);
+    */
+    toast({
+      title: "Upgrade to Premium",
+      description: "Transaction logic needs to be updated for Privy integration.",
+      variant: "default",
+    });
   };
 
   const handleCancelPremium = async () => {
-    if (!publicKey) {
+    if (!user?.address) {
       toast({
         title: "Wallet Required",
         description: "Please connect your wallet to manage your subscription.",
@@ -482,7 +402,7 @@ export default function SettingsPage() {
     }
     
     try {
-      const walletAddress = publicKey.toString();
+      const walletAddress = user.address;
       console.log("Cancelling premium for wallet:", walletAddress);
       
       // Try regular client first
@@ -555,7 +475,7 @@ export default function SettingsPage() {
   
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
-    if (!file || !publicKey) return
+    if (!file || !user?.address) return
     
     // Client-side validation
     const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -585,7 +505,7 @@ export default function SettingsPage() {
       // Create form data for the upload
       const formData = new FormData()
       formData.append('file', file)
-      formData.append('walletAddress', publicKey.toString())
+      formData.append('walletAddress', user.address)
       
       // Call the API to upload the file
       const response = await fetch('/api/settings/profile-picture', {
@@ -613,7 +533,7 @@ export default function SettingsPage() {
       const { data: refreshedProfile, error: refreshError } = await supabase
         .from('user_profiles')
         .select('*')
-        .eq('wallet_address', publicKey.toString())
+        .eq('wallet_address', user.address)
         .single()
       
       if (refreshError) {
@@ -645,13 +565,13 @@ export default function SettingsPage() {
   
   // Add remove profile picture handler
   const handleRemoveProfilePicture = async () => {
-    if (!publicKey) return
+    if (!user?.address) return
     
     try {
       setIsRemoving(true)
       
       // Call the API to remove the profile picture
-      const response = await fetch(`/api/settings/profile-picture?walletAddress=${publicKey.toString()}`, {
+      const response = await fetch(`/api/settings/profile-picture?walletAddress=${user.address}`, {
         method: 'DELETE',
       })
       
@@ -748,7 +668,7 @@ export default function SettingsPage() {
                         className="object-cover"
                       />
                       <AvatarFallback className="bg-muted">
-                        {(profileData?.username?.charAt(0) || publicKey?.toString()?.charAt(0) || "U").toUpperCase()}
+                        {(profileData?.username?.charAt(0) || user?.address?.charAt(0) || "U").toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
                     <div className="space-y-2">

@@ -36,7 +36,6 @@ export function MarketOverview({ marketData, className = "", onTokenSelect }: Ma
               <TableHead className="text-muted-foreground">Asset</TableHead>
               <TableHead className="text-muted-foreground">Price</TableHead>
               <TableHead className="text-muted-foreground">24h Change</TableHead>
-              <TableHead className="text-muted-foreground hidden md:table-cell">Market Cap</TableHead>
               <TableHead className="text-muted-foreground hidden md:table-cell">Volume</TableHead>
               <TableHead className="text-muted-foreground">AI Sentiment</TableHead>
             </TableRow>
@@ -65,8 +64,7 @@ export function MarketOverview({ marketData, className = "", onTokenSelect }: Ma
                     {asset.change}
                   </div>
                 </TableCell>
-                <TableCell className="hidden md:table-cell">${asset.marketCap}</TableCell>
-                <TableCell className="hidden md:table-cell">${asset.volume}</TableCell>
+                <TableCell className="hidden md:table-cell">{asset.volume}</TableCell>
                 <TableCell>
                   <Badge
                     variant="outline"

@@ -18,7 +18,7 @@ import {
   Legend,
   Filler,
 } from "chart.js"
-import { fetchCryptoHistoricalData } from "@/lib/api/crypto-api"
+import { fetchBinanceHistoricalData } from "@/lib/api/crypto-api"
 
 ChartJS.register(
   CategoryScale,
@@ -75,7 +75,19 @@ export function SimplePriceChart({ selectedCoin, timeRange, onTimeRangeChange }:
     const fetchData = async () => {
       setIsLoading(true)
       try {
-        const { prices, volumes } = await fetchCryptoHistoricalData(selectedCoin, timeRange)
+        // Map timeRange to Binance interval and limit
+        const intervalMap: Record<string, { interval: string, limit: number }> = {
+          "1m": { interval: "1m", limit: 60 },
+          "5m": { interval: "5m", limit: 60 },
+          "15m": { interval: "15m", limit: 60 },
+          "1h": { interval: "1h", limit: 48 },
+          "4h": { interval: "4h", limit: 60 },
+          "1d": { interval: "1d", limit: 30 },
+          "7d": { interval: "4h", limit: 42 }, // 7d = 42 x 4h
+          "30d": { interval: "1d", limit: 30 },
+        }
+        const { interval, limit } = intervalMap[timeRange] || { interval: "1d", limit: 30 }
+        const { prices, volumes } = await fetchBinanceHistoricalData(selectedCoin, interval, limit)
         
         // Format the data for the chart
         const formattedPrices = prices.map(([timestamp, price]: [number, number]) => price)
@@ -112,6 +124,11 @@ export function SimplePriceChart({ selectedCoin, timeRange, onTimeRangeChange }:
     }
 
     fetchData()
+    
+    // Set up interval to refresh data every 10 seconds
+    const interval = setInterval(fetchData, 10000)
+    
+    return () => clearInterval(interval)
   }, [selectedCoin, timeRange])
 
   const formatPrice = (price: number) => {

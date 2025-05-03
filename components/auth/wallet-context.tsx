@@ -1,8 +1,7 @@
 "use client"
 
 import React, { createContext, useContext, useState, useEffect } from "react"
-import { useWallet } from '@solana/wallet-adapter-react';
-import { useConnection } from '@solana/wallet-adapter-react';
+import { usePrivy } from '@privy-io/react-auth';
 
 type WalletData = {
   address: string
@@ -12,7 +11,6 @@ type WalletData = {
 export interface User {
   address: string
   wallet?: WalletData
-  // Add these fields to make the User type compatible with our needs
   id?: string
   name?: string
   avatar?: string
@@ -39,62 +37,69 @@ const WalletContext = createContext<WalletContextType>({
 export const useWalletAuth = () => useContext(WalletContext)
 
 export function WalletAuthProvider({ children }: { children: React.ReactNode }) {
-  const { publicKey, connected, select, disconnect, wallets } = useWallet();
-  const { connection } = useConnection();
-
+  const { login: privyLogin, logout: privyLogout, authenticated, user: privyUser } = usePrivy();
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
     const syncUser = async () => {
-      console.log('syncUser effect triggered:', { connected, publicKey: publicKey?.toString() });
+      console.log('syncUser effect triggered:', { authenticated, privyUser });
       setIsLoading(true)
 
-      if (connected && publicKey) {
+      if (authenticated && privyUser) {
         try {
-          const walletAddress = publicKey.toString();
+          // Get the Solana wallet address directly from privyUser.wallet
+          const solanaWallet = privyUser.wallet;
+          const walletAddress = solanaWallet?.address;
           
-          console.log('Wallet connected:', {
-            address: walletAddress,
-          });
-
-          const userData: User = {
-            address: walletAddress,
-            wallet: {
+          if (walletAddress) {
+            console.log('Wallet connected:', {
               address: walletAddress,
-              chain: 'solana',
-            },
-          };
-
-          setUser(userData);
-
-          try {
-            console.log('Attempting to save wallet data to API:', userData.wallet);
-            // Save the wallet info to your backend
-            const response = await fetch("/api/users", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                wallet: userData.wallet,
-              }),
             });
 
-            console.log('API response status:', response.status);
-            
-            if (!response.ok) {
-              const errorText = await response.text();
-              console.error(`API error: ${response.status}`, errorText);
-            } else {
-              const data = await response.json();
-              console.log("User successfully synced with Supabase:", data);
+            const userData: User = {
+              address: walletAddress,
+              wallet: {
+                address: walletAddress,
+                chain: 'solana',
+              },
+              id: privyUser.id,
+              // name, avatar, etc. can be left undefined if not available
+            };
+
+            setUser(userData);
+
+            try {
+              console.log('Attempting to save wallet data to API:', userData.wallet);
+              // Save the wallet info to your backend
+              const response = await fetch("/api/users", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  wallet: userData.wallet,
+                }),
+              });
+
+              console.log('API response status:', response.status);
+              
+              if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`API error: ${response.status}`, errorText);
+              } else {
+                const data = await response.json();
+                console.log("User successfully synced with Supabase:", data);
+              }
+            } catch (error) {
+              console.error("Error syncing user with Supabase:", error);
             }
-          } catch (error) {
-            console.error("Error syncing user with Supabase:", error);
+          } else {
+            setUser(null);
           }
         } catch (error) {
           console.error("Error processing wallet data:", error);
+          setUser(null);
         }
       } else {
         setUser(null);
@@ -104,24 +109,11 @@ export function WalletAuthProvider({ children }: { children: React.ReactNode }) 
     };
 
     syncUser();
-  }, [connected, publicKey, connection]);
+  }, [authenticated, privyUser]);
 
   const login = async () => {
     try {
-      // Find available wallets
-      if (wallets.length > 0) {
-        // Default to Phantom if available, otherwise use the first wallet
-        const phantomWallet = wallets.find(wallet => 
-          wallet.adapter.name.toLowerCase().includes('phantom')
-        );
-        
-        const walletToUse = phantomWallet || wallets[0];
-        
-        console.log(`Selecting wallet: ${walletToUse.adapter.name}`);
-        select(walletToUse.adapter.name);
-      } else {
-        throw new Error("No wallets available");
-      }
+      await privyLogin();
     } catch (err) {
       console.error("Login failed:", err);
       throw err;
@@ -130,7 +122,7 @@ export function WalletAuthProvider({ children }: { children: React.ReactNode }) 
 
   const logout = async () => {
     try {
-      await disconnect();
+      await privyLogout();
       setUser(null);
     } catch (err) {
       console.error("Logout failed:", err);
@@ -144,7 +136,7 @@ export function WalletAuthProvider({ children }: { children: React.ReactNode }) 
     <WalletContext.Provider
       value={{
         user,
-        isAuthenticated: connected,
+        isAuthenticated: authenticated,
         isLoading,
         login,
         logout,

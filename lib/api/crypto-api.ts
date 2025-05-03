@@ -112,15 +112,15 @@ export interface FormattedCryptoAsset {
 
 export interface CryptoAlert {
   id: string
-  type: "price" | "signal" | "whale"
-  title: string
-  description: string
-  active: boolean
-  time: string
-  asset: string
+  type: "price" | "volume" | "trend"
   symbol: string
+  condition: string
+  value: number
+  active: boolean
+  priority: "high" | "medium" | "low"
+  timestamp: string
+  description?: string
   targetPrice?: number
-  currentPrice?: number
 }
 
 export interface CryptoSignal {
@@ -203,10 +203,13 @@ export async function fetchCryptoMarkets(): Promise<FormattedCryptoAsset[]> {
       })
     )
 
-    return pairs
-      .filter((pair): pair is DexScreenerPair => pair !== undefined)
-      .map((pair) => formatDexScreenerPair(pair))
-    } catch (error) {
+    const formattedPairs = await Promise.all(
+      pairs
+        .filter((pair): pair is DexScreenerPair => pair !== undefined)
+        .map((pair) => formatDexScreenerPair(pair))
+    )
+    return formattedPairs
+  } catch (error) {
     console.error("Error fetching crypto markets:", error)
     return []
   }
@@ -867,5 +870,145 @@ export async function fetchMarketData(): Promise<FormattedCryptoAsset[]> {
   } catch (error) {
     console.error("Error in fetchMarketData:", error)
     return []
+  }
+}
+
+/**
+ * Fetch top movers from Binance API and format as FormattedCryptoAsset[]
+ * Uses https://api.binance.com/api/v3/ticker/24hr
+ */
+export async function fetchBinanceTopMovers(limit: number = 10): Promise<FormattedCryptoAsset[]> {
+  try {
+    const response = await fetch('https://api.binance.com/api/v3/ticker/24hr')
+    if (!response.ok) throw new Error(`Binance API error: ${response.status}`)
+    const data = await response.json()
+
+    // Filter for USDT pairs only (most popular)
+    const usdtPairs = data.filter((item: any) => item.symbol.endsWith('USDT'))
+
+    // Sort by absolute 24h price change percent (top movers)
+    usdtPairs.sort((a: any, b: any) => Math.abs(Number(b.priceChangePercent)) - Math.abs(Number(a.priceChangePercent)))
+
+    // Take top N
+    const topMovers = usdtPairs.slice(0, limit)
+
+    // Format for your UI
+    const formatted = await Promise.all(topMovers.map(async (item: any) => {
+      const priceValue = Number(item.lastPrice)
+      const changePercent = Number(item.priceChangePercent)
+      const volume = Number(item.quoteVolume)
+      const marketCap = 0 // Binance API does not provide market cap directly
+      const asset: CryptoAsset = {
+        id: item.symbol,
+        symbol: item.symbol.replace('USDT', ''),
+        name: item.symbol.replace('USDT', ''),
+        image: `/tokens/${item.symbol.replace('USDT', '').toLowerCase()}.png`,
+        current_price: priceValue,
+        market_cap: marketCap,
+        total_volume: volume,
+        price_change_percentage_24h: changePercent,
+        last_updated: '',
+      } as CryptoAsset
+      const sentiment = await getSentiment(asset)
+      return {
+        id: asset.id,
+        name: asset.name,
+        symbol: asset.symbol,
+        price: formatPrice(priceValue),
+        priceValue,
+        change: formatChange(changePercent),
+        changePercent,
+        marketCap: marketCap ? formatLargeNumber(marketCap) : 'N/A',
+        volume: formatLargeNumber(volume),
+        positive: changePercent > 0,
+        sentiment,
+        image: asset.image,
+      } as FormattedCryptoAsset
+    }))
+    return formatted
+  } catch (error) {
+    console.error('Error fetching Binance top movers:', error)
+    return []
+  }
+}
+
+/**
+ * Fetch top tokens from Binance API by 24h volume and format as FormattedCryptoAsset[]
+ * Uses https://api.binance.com/api/v3/ticker/24hr
+ */
+export async function fetchBinanceTopTokens(limit: number = 10): Promise<FormattedCryptoAsset[]> {
+  try {
+    const response = await fetch('https://api.binance.com/api/v3/ticker/24hr')
+    if (!response.ok) throw new Error(`Binance API error: ${response.status}`)
+    const data = await response.json()
+
+    // Filter for USDT pairs only (most popular)
+    const usdtPairs = data.filter((item: any) => item.symbol.endsWith('USDT'))
+
+    // Sort by 24h quote volume (descending)
+    usdtPairs.sort((a: any, b: any) => Number(b.quoteVolume) - Number(a.quoteVolume))
+
+    // Take top N
+    const topTokens = usdtPairs.slice(0, limit)
+
+    // Format for your UI
+    const formatted = await Promise.all(topTokens.map(async (item: any) => {
+      const priceValue = Number(item.lastPrice)
+      const changePercent = Number(item.priceChangePercent)
+      const volume = Number(item.quoteVolume)
+      const marketCap = 0 // Binance API does not provide market cap directly
+      const asset: CryptoAsset = {
+        id: item.symbol,
+        symbol: item.symbol.replace('USDT', ''),
+        name: item.symbol.replace('USDT', ''),
+        image: `/tokens/${item.symbol.replace('USDT', '').toLowerCase()}.png`,
+        current_price: priceValue,
+        market_cap: marketCap,
+        total_volume: volume,
+        price_change_percentage_24h: changePercent,
+        last_updated: '',
+      } as CryptoAsset
+      const sentiment = await getSentiment(asset)
+      return {
+        id: asset.id,
+        name: asset.name,
+        symbol: asset.symbol,
+        price: formatPrice(priceValue),
+        priceValue,
+        change: formatChange(changePercent),
+        changePercent,
+        marketCap: marketCap ? formatLargeNumber(marketCap) : 'N/A',
+        volume: formatLargeNumber(volume),
+        positive: changePercent > 0,
+        sentiment,
+        image: asset.image,
+      } as FormattedCryptoAsset
+    }))
+    return formatted
+  } catch (error) {
+    console.error('Error fetching Binance top tokens:', error)
+    return []
+  }
+}
+
+/**
+ * Fetch historical price data from Binance API for a given symbol and interval
+ * Returns { prices, volumes } in the same format as fetchCryptoHistoricalData
+ */
+export async function fetchBinanceHistoricalData(symbol: string, interval: string, limit: number = 100): Promise<{ prices: [number, number][], volumes: [number, number][] }> {
+  try {
+    // Always use USDT pairs
+    const binanceSymbol = symbol.toUpperCase().endsWith('USDT') ? symbol.toUpperCase() : symbol.toUpperCase() + 'USDT'
+    const url = `https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=${interval}&limit=${limit}`
+    const response = await fetch(url)
+    if (!response.ok) throw new Error(`Binance Klines API error: ${response.status}`)
+    const data = await response.json()
+    // Each kline: [openTime, open, high, low, close, volume, closeTime, ...]
+    const prices: [number, number][] = data.map((kline: any[]) => [kline[0], parseFloat(kline[4])]) // [timestamp, close]
+    const volumes: [number, number][] = data.map((kline: any[]) => [kline[0], parseFloat(kline[5])]) // [timestamp, volume]
+    return { prices, volumes }
+  } catch (error) {
+    console.error('Error fetching Binance historical data:', error)
+    return { prices: [], volumes: [] }
   }
 }

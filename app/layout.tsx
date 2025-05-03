@@ -5,7 +5,7 @@ import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { NotificationProvider } from "@/contexts/notification-context"
 import { Toaster } from "@/components/ui/toaster"
-import { SolanaWalletProvider } from "@/components/auth/wallet-provider"
+import { WalletProvider } from "@/components/auth/wallet-provider"
 import { WalletAuthProvider } from "@/components/auth/wallet-context"
 import { UserProfileProvider } from "@/contexts/user-profile-context"
 
@@ -25,7 +25,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.className} antialiased`}>
-        <SolanaWalletProvider>
+        <WalletProvider>
           <WalletAuthProvider>
             <NotificationProvider>
               <UserProfileProvider>
@@ -36,7 +36,7 @@ export default function RootLayout({
               </UserProfileProvider>
             </NotificationProvider>
           </WalletAuthProvider>
-        </SolanaWalletProvider>
+        </WalletProvider>
       </body>
     </html>
   )

@@ -2,74 +2,101 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Bell, Plus, Settings, Trash2 } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Plus, Bell, Trash2 } from "lucide-react"
 import { Switch } from "@/components/ui/switch"
-import type { CryptoAlert } from "@/lib/api/crypto-api"
+import Link from "next/link"
+
+interface CryptoAlert {
+  id: string
+  type: 'price' | 'volume' | 'trend'
+  symbol: string
+  condition: string
+  value: number
+  active: boolean
+  priority: 'high' | 'medium' | 'low'
+  timestamp: string
+}
 
 interface TradingAlertsProps {
-  onCreateAlert?: () => void
   alerts: CryptoAlert[]
-  onDeleteAlert?: (id: string) => void
-  onToggleAlert?: (id: string) => void
+  onCreateAlert: () => void
+  onDeleteAlert: (id: string) => void
+  onToggleAlert: (id: string) => void
+  isPreview?: boolean
 }
 
 export function TradingAlerts({ 
+  alerts, 
   onCreateAlert, 
-  alerts = [], 
-  onDeleteAlert,
-  onToggleAlert 
+  onDeleteAlert, 
+  onToggleAlert,
+  isPreview = false 
 }: TradingAlertsProps) {
   return (
     <Card className="border-gray-200">
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <div className="flex items-center">
-          <Bell className="h-5 w-5 mr-2 text-gray-600" />
-          <CardTitle className="text-lg font-semibold">Trading Alerts</CardTitle>
-        </div>
-        <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-          <Settings className="h-4 w-4" />
-        </Button>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-sm font-medium">
+          Trading Alerts
+        </CardTitle>
+        <Bell className="h-4 w-4 text-muted-foreground" />
       </CardHeader>
-      <CardContent className="space-y-4">
-        {alerts.map((alert) => (
-          <Card key={alert.id} className="bg-gray-50 border-gray-200">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div className="space-y-1">
-                  <h3 className="font-medium text-sm">{alert.title}</h3>
-                  <p className="text-sm text-gray-600">{alert.description}</p>
-                  <p className="text-xs text-gray-500">{alert.time}</p>
-                </div>
+      <CardContent>
+        <div className="space-y-4">
+          {alerts.map((alert) => (
+            <div key={alert.id} className="flex items-start justify-between">
+              <div className="space-y-1">
                 <div className="flex items-center space-x-2">
-                  <Switch 
-                    checked={alert.active} 
-                    onCheckedChange={() => onToggleAlert?.(alert.id)} 
-                  />
-                  {onDeleteAlert && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 w-8 p-0 text-gray-500 hover:text-red-600"
-                      onClick={() => onDeleteAlert(alert.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      <span className="sr-only">Delete alert</span>
-                    </Button>
-                  )}
+                  <p className="text-sm font-medium leading-none">
+                    {alert.symbol}
+                  </p>
+                  <Badge variant={alert.priority === 'high' ? 'destructive' : alert.priority === 'medium' ? 'secondary' : 'outline'}>
+                    {alert.priority}
+                  </Badge>
                 </div>
+                <p className="text-sm text-muted-foreground">
+                  {alert.type}: {alert.condition} {alert.value}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {new Date(alert.timestamp).toLocaleTimeString()}
+                </p>
               </div>
-            </CardContent>
-          </Card>
-        ))}
-
-        <Button
-          variant="outline"
-          size="lg"
-          className="w-full border-gray-200 flex items-center justify-center gap-2"
-          onClick={onCreateAlert}
-        >
-          <Plus className="h-5 w-5" /> Create New Alert
-        </Button>
+              <div className="flex items-center space-x-2">
+                <Switch
+                  checked={alert.active}
+                  onCheckedChange={() => onToggleAlert(alert.id)}
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                  onClick={() => onDeleteAlert(alert.id)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span className="sr-only">Delete alert</span>
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+        {isPreview ? (
+          <div className="mt-4 space-y-2">
+            <Button variant="outline" className="w-full" asChild>
+              <Link href="/dashboard/signals">
+                View All Alerts
+              </Link>
+            </Button>
+            <Button className="w-full" onClick={onCreateAlert}>
+              <Plus className="mr-2 h-4 w-4" />
+              Create Alert
+            </Button>
+          </div>
+        ) : (
+          <Button className="w-full mt-4" onClick={onCreateAlert}>
+            <Plus className="mr-2 h-4 w-4" />
+            Create Alert
+          </Button>
+        )}
       </CardContent>
     </Card>
   )
