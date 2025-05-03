@@ -20,7 +20,9 @@ import { CreateAlertDialog } from "@/components/dashboard/create-alert-dialog"
 import { AlertMonitor } from "@/lib/services/alert-monitor"
 import { PriceMonitor } from "@/lib/services/price-monitor"
 import { toast } from "@/components/ui/use-toast"
-import { alertStorage } from "@/lib/services/alert-storage"
+import { useWalletAuth } from "@/components/auth/wallet-context"
+import { fetchAlerts, createAlert, updateAlert, deleteAlert } from "@/lib/services/alert-supabase"
+import { EditAlertDialog } from "@/components/dashboard/edit-alert-dialog"
 
 // Define the time range type that matches SimplePriceChart's expectations
 type ChartTimeRange = "1m" | "5m" | "15m" | "1h" | "4h" | "1d" | "7d" | "30d"
@@ -56,19 +58,24 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null)
   const alertMonitorRef = useRef<AlertMonitor | null>(null)
   const priceMonitorRef = useRef<PriceMonitor | null>(null)
+  const { getWalletAddress } = useWalletAuth()
+  const [editingAlert, setEditingAlert] = useState<CryptoAlert | null>(null)
+  const [isEditAlertOpen, setIsEditAlertOpen] = useState(false)
 
-  // Load alerts from storage
+  // Load alerts from Supabase
   useEffect(() => {
     const loadAlerts = async () => {
       try {
-        const storedAlerts = await alertStorage.getAlerts()
+        const walletAddress = getWalletAddress()
+        if (!walletAddress) return
+        const storedAlerts = await fetchAlerts(walletAddress)
         setAlerts(storedAlerts)
       } catch (error) {
         console.error("Error loading alerts:", error)
       }
     }
     loadAlerts()
-  }, [])
+  }, [getWalletAddress])
 
   // Memoize the price monitor callback to prevent unnecessary re-renders
   const handlePriceUpdate = useCallback((updatedAssets: FormattedCryptoAsset[]) => {
@@ -182,15 +189,15 @@ export default function Dashboard() {
 
   const handleCreateAlertSubmit = async (newAlert: Omit<CryptoAlert, "id">) => {
     try {
-      const alert: CryptoAlert = {
-        ...newAlert,
-        id: crypto.randomUUID(),
-        active: true,
-        timestamp: new Date().toISOString()
-      }
-      await alertStorage.saveAlert(alert)
-      setAlerts(prev => [...prev, alert])
+      const walletAddress = getWalletAddress()
+      if (!walletAddress) throw new Error('No wallet address')
+      const created = await createAlert(newAlert, walletAddress)
+      setAlerts(prev => [...prev, created])
       setShowCreateAlert(false)
+      toast({
+        title: "Alert created",
+        description: `${created.symbol} ${created.type} alert when ${created.condition} ${created.value} has been created.`,
+      })
     } catch (error) {
       console.error("Error creating alert:", error)
       toast({
@@ -203,8 +210,14 @@ export default function Dashboard() {
 
   const handleDeleteAlert = async (alertId: string) => {
     try {
-      await alertStorage.deleteAlert(alertId)
+      const walletAddress = getWalletAddress()
+      if (!walletAddress) throw new Error('No wallet address')
+      await deleteAlert(alertId, walletAddress)
       setAlerts(prev => prev.filter(alert => alert.id !== alertId))
+      toast({
+        title: "Alert deleted",
+        description: "Alert has been deleted successfully.",
+      })
     } catch (error) {
       console.error("Error deleting alert:", error)
       toast({
@@ -217,18 +230,43 @@ export default function Dashboard() {
 
   const handleToggleAlert = async (alertId: string) => {
     try {
-      const updatedAlerts = alerts.map(alert => 
-        alert.id === alertId ? { ...alert, active: !alert.active } : alert
-      )
-      setAlerts(updatedAlerts)
-      // Update storage
-      await Promise.all(updatedAlerts.map(alert => alertStorage.saveAlert(alert)))
+      const alert = alerts.find(a => a.id === alertId)
+      if (!alert) return
+      const updated = await updateAlert({ ...alert, active: !alert.active })
+      setAlerts(prev => prev.map(a => a.id === updated.id ? updated : a))
     } catch (error) {
       console.error("Error toggling alert:", error)
       toast({
         title: "Error",
         description: "Failed to toggle alert. Please try again.",
         variant: "destructive"
+      })
+    }
+  }
+
+  const handleEditAlert = (alert: CryptoAlert) => {
+    setEditingAlert(alert)
+    setIsEditAlertOpen(true)
+  }
+
+  const handleSaveEditedAlert = async (updatedAlert: CryptoAlert) => {
+    try {
+      const walletAddress = getWalletAddress()
+      if (!walletAddress) throw new Error('No wallet address')
+      const updated = await updateAlert({ ...updatedAlert, wallet_address: walletAddress })
+      setAlerts(prev => prev.map(a => a.id === updated.id ? updated : a))
+      setIsEditAlertOpen(false)
+      setEditingAlert(null)
+      toast({
+        title: 'Alert updated',
+        description: `Alert for ${updated.symbol} updated successfully.`
+      })
+    } catch (error) {
+      console.error('Error updating alert:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to update alert. Please try again.',
+        variant: 'destructive',
       })
     }
   }
@@ -263,10 +301,10 @@ export default function Dashboard() {
 
   // Filter alerts to show only high-priority ones on dashboard
   const highPriorityAlerts = useMemo(() => 
-    alerts.filter(alert => 
-      alert.priority === 'high' || 
-      (alert.priority === 'medium' && alert.type === 'price')
-    ).slice(0, 5), // Show max 5 alerts
+    alerts
+      .filter(alert => alert.active)
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, 3), // Show only the 3 most recent active alerts
     [alerts]
   )
 
@@ -309,6 +347,7 @@ export default function Dashboard() {
               onCreateAlert={handleCreateAlert}
               onDeleteAlert={handleDeleteAlert}
               onToggleAlert={handleToggleAlert}
+              onEditAlert={handleEditAlert}
               isPreview={true}
             />
           </div>
@@ -318,6 +357,20 @@ export default function Dashboard() {
           open={showCreateAlert} 
           onOpenChange={setShowCreateAlert}
           onCreateAlert={handleCreateAlertSubmit}
+          cryptoOptions={marketData.map(token => ({
+            id: token.id,
+            name: token.name,
+            symbol: token.symbol,
+            price: token.priceValue
+          }))}
+          walletAddress={getWalletAddress() || ''}
+        />
+
+        <EditAlertDialog
+          open={isEditAlertOpen}
+          onOpenChange={setIsEditAlertOpen}
+          alert={editingAlert}
+          onEditAlert={handleSaveEditedAlert}
           cryptoOptions={marketData.map(token => ({
             id: token.id,
             name: token.name,
@@ -355,6 +408,7 @@ export default function Dashboard() {
             onCreateAlert={handleCreateAlert}
             onDeleteAlert={handleDeleteAlert}
             onToggleAlert={handleToggleAlert}
+            onEditAlert={handleEditAlert}
             isPreview={true}
           />
         </div>
@@ -364,6 +418,20 @@ export default function Dashboard() {
         open={showCreateAlert} 
         onOpenChange={setShowCreateAlert}
         onCreateAlert={handleCreateAlertSubmit}
+        cryptoOptions={marketData.map(token => ({
+          id: token.id,
+          name: token.name,
+          symbol: token.symbol,
+          price: token.priceValue
+        }))}
+        walletAddress={getWalletAddress() || ''}
+      />
+
+      <EditAlertDialog
+        open={isEditAlertOpen}
+        onOpenChange={setIsEditAlertOpen}
+        alert={editingAlert}
+        onEditAlert={handleSaveEditedAlert}
         cryptoOptions={marketData.map(token => ({
           id: token.id,
           name: token.name,

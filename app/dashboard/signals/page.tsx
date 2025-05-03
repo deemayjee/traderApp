@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
@@ -8,7 +8,6 @@ import { Badge } from "@/components/ui/badge"
 import { Plus, TrendingUp, AlertTriangle, Brain, Loader2, Trash2 } from "lucide-react"
 import {
   fetchCryptoMarkets,
-  generateAlertsFromCryptoData,
   generateRealSignals,
   type CryptoAlert,
   type CryptoSignal,
@@ -23,51 +22,11 @@ import { signalStorage } from '@/lib/services/signal-storage'
 import { useNotifications, createSignalNotification, createRiskNotification } from '@/lib/services/notification-service'
 import { toast } from "@/components/ui/use-toast"
 import { SignalFilterToggle } from "@/components/dashboard/signal-toggle-filter"
+import { EditAlertDialog } from '@/components/dashboard/edit-alert-dialog'
+import { useWalletAuth } from "@/components/auth/wallet-context"
+import { fetchAlerts, createAlert, updateAlert, deleteAlert } from "@/lib/services/alert-supabase"
+import { SignalMonitor } from "@/lib/services/signal-monitor"
 
-// Separate storage for alerts with proper typing
-interface AlertStorage {
-  saveAlert(alert: CryptoAlert): Promise<void>;
-  getAlerts(): Promise<CryptoAlert[]>;
-  deleteAlert(id: string): Promise<void>;
-}
-
-const alertStorage: AlertStorage = {
-  async saveAlert(alert: CryptoAlert) {
-    try {
-      const alerts = await this.getAlerts()
-      alerts.push(alert)
-      localStorage.setItem('alerts', JSON.stringify(alerts))
-      console.log('Alert saved successfully:', alert)
-    } catch (error) {
-      console.error('Error saving alert:', error)
-      throw error
-    }
-  },
-  
-  async getAlerts(): Promise<CryptoAlert[]> {
-    try {
-      const alertsJson = localStorage.getItem('alerts')
-      return alertsJson ? JSON.parse(alertsJson) : []
-    } catch (error) {
-      console.error('Error getting alerts:', error)
-      return []
-    }
-  },
-  
-  async deleteAlert(id: string) {
-    try {
-      const alerts = await this.getAlerts()
-      const filteredAlerts = alerts.filter(alert => alert.id !== id)
-      localStorage.setItem('alerts', JSON.stringify(filteredAlerts))
-      console.log('Alert deleted successfully:', id)
-    } catch (error) {
-      console.error('Error deleting alert:', error)
-      throw error
-    }
-  }
-}
-
-// Update the component to include alert creation and deletion functionality
 export default function SignalsPage() {
   const [alerts, setAlerts] = useState<CryptoAlert[]>([])
   const [signals, setSignals] = useState<CryptoSignal[]>([])
@@ -84,11 +43,16 @@ export default function SignalsPage() {
     timeframe: null,
     agents: [],
   })
+  const [editingAlert, setEditingAlert] = useState<CryptoAlert | null>(null)
+  const [isEditAlertOpen, setIsEditAlertOpen] = useState(false)
+  const { user } = useWalletAuth();
+  const walletAddress = user?.address;
 
   // Initialize services
   const webSocket = useWebSocket()
   const { addNotification } = useNotifications()
   const signalValidator = new SignalValidator()
+  const signalMonitorRef = useRef<SignalMonitor | null>(null)
 
   // Connect to WebSocket on mount
   useEffect(() => {
@@ -96,54 +60,39 @@ export default function SignalsPage() {
     return () => webSocket.disconnect()
   }, [])
 
-  // Monitor price updates and validate signals
+  // Initialize signal monitor
   useEffect(() => {
-    const validateActiveSignals = async () => {
-      const activeSignals = await signalStorage.getActiveSignals()
-      
-      activeSignals.forEach(async (signal: CryptoSignal) => {
-        const currentPrice = webSocket.lastPrice[signal.symbol]
-        if (!currentPrice) return
-
-        // Calculate 24h volatility (simplified)
-        const volatility24h = 0.02 // This should be calculated from historical data
-
-        const validation: ValidationResult = signalValidator.validateSignal(signal, currentPrice, volatility24h)
-        
-        if (!validation.isValid) {
-          // Invalidate signal
-          await signalStorage.updateSignalStatus(signal.id, 'invalidated')
-          
-          // Notify user
-          addNotification(
-            createRiskNotification(
-              'Signal Invalidated',
-              `${signal.symbol} signal invalidated: ${validation.message}`,
-              'high',
-              { signalId: signal.id }
-            )
-          )
+    signalMonitorRef.current = new SignalMonitor(
+      (updatedSignals) => {
+        // Only update if signals have actually changed
+        if (JSON.stringify(updatedSignals) !== JSON.stringify(signals)) {
+          setSignals(updatedSignals)
         }
-        
-        // Check for significant price movements
-        const priceChange = Math.abs(currentPrice - signal.priceValue) / signal.priceValue
-        if (priceChange > 0.02) { // 2% price movement
-          addNotification(
-            createSignalNotification(
-              'Significant Price Movement',
-              `${signal.symbol} price moved ${(priceChange * 100).toFixed(1)}% from signal price`,
-              'medium',
-              { signalId: signal.id, priceChange }
-            )
-          )
-        }
+      },
+      (notification) => addNotification(notification)
+    )
+    signalMonitorRef.current.start()
+
+    return () => {
+      signalMonitorRef.current?.stop()
+    }
+  }, []) // Empty dependency array since we only want to initialize once
+
+  // Update signal monitor with new signals
+  useEffect(() => {
+    if (signalMonitorRef.current) {
+      signalMonitorRef.current.updateSignals(signals)
+    }
+  }, [signals]) // Only update when signals change
+
+  // Update signal monitor with price updates
+  useEffect(() => {
+    if (signalMonitorRef.current && webSocket.lastPrice) {
+      Object.entries(webSocket.lastPrice).forEach(([symbol, price]) => {
+        signalMonitorRef.current?.updatePrice(symbol, price)
       })
     }
-
-    // Validate signals every minute
-    const interval = setInterval(validateActiveSignals, 60000)
-    return () => clearInterval(interval)
-  }, [webSocket.lastPrice])
+  }, [webSocket.lastPrice]) // Only update when prices change
 
   // Fetch initial data
   useEffect(() => {
@@ -155,7 +104,7 @@ export default function SignalsPage() {
         const cryptoIds = ["bitcoin", "ethereum", "solana", "binancecoin", "avalanche-2"]
 
         // Fetch market data for alerts and dropdown options
-        const cryptoData = await fetchCryptoMarkets("usd", 10)
+        const cryptoData = await fetchCryptoMarkets()
 
         // Prepare crypto options for the create alert dialog
         setCryptoOptions(
@@ -163,7 +112,7 @@ export default function SignalsPage() {
             id: crypto.id,
             name: crypto.name,
             symbol: crypto.symbol.toUpperCase(),
-            price: crypto.current_price,
+            price: crypto.priceValue,
           }))
         )
 
@@ -225,36 +174,36 @@ export default function SignalsPage() {
     })
   }, [signals, activeSignalTab, filters])
 
-  // Load alerts on component mount
+  // Fetch alerts from Supabase on mount or when walletAddress changes
   useEffect(() => {
-    const loadAlerts = async () => {
-      try {
-        const savedAlerts = await alertStorage.getAlerts()
-        setAlerts(savedAlerts)
-      } catch (error) {
-        console.error('Error loading alerts:', error)
-      }
-    }
-    loadAlerts()
-  }, [])
+    if (!walletAddress) return;
+    fetchAlerts(walletAddress)
+      .then(setAlerts)
+      .catch((error) => {
+        console.error('Error fetching alerts:', error)
+        toast({
+          title: 'Error',
+          description: 'Failed to load alerts from database.',
+          variant: 'destructive',
+        })
+      })
+  }, [walletAddress])
 
-  // Handle creating a new alert
+  // Create alert in Supabase
   const handleCreateAlert = async (newAlert: Omit<CryptoAlert, "id">) => {
     try {
-      const alertWithId: CryptoAlert = {
-        ...newAlert,
-        id: generateUUID(),
-      }
-
-      await alertStorage.saveAlert(alertWithId)
-      setAlerts(prevAlerts => [alertWithId, ...prevAlerts])
-      
+      console.log('DEBUG: walletAddress', walletAddress)
+      console.log('DEBUG: newAlert', newAlert)
+      if (!walletAddress) throw new Error('No wallet address')
+      const created = await createAlert({ ...newAlert, wallet_address: walletAddress }, walletAddress)
+      console.log('DEBUG: createAlert response', created)
+      setAlerts(prev => [created, ...prev])
       addNotification(
         createSignalNotification(
           'New Alert Created',
-          `Created new alert for ${alertWithId.symbol}`,
+          `Created new alert for ${created.symbol}`,
           'medium',
-          alertWithId
+          created
         )
       )
     } catch (error) {
@@ -267,12 +216,34 @@ export default function SignalsPage() {
     }
   }
 
-  // Handle deleting an alert
+  // Edit alert in Supabase
+  const handleSaveEditedAlert = async (updatedAlert: CryptoAlert) => {
+    try {
+      if (!walletAddress) throw new Error('No wallet address')
+      const updated = await updateAlert({ ...updatedAlert, wallet_address: walletAddress })
+      setAlerts(prev => prev.map(a => a.id === updated.id ? updated : a))
+      setIsEditAlertOpen(false)
+      setEditingAlert(null)
+      toast({
+        title: 'Alert updated',
+        description: `Alert for ${updated.symbol} updated successfully.`
+      })
+    } catch (error) {
+      console.error('Error updating alert:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to update alert. Please try again.',
+        variant: 'destructive',
+      })
+    }
+  }
+
+  // Delete alert in Supabase
   const handleDeleteAlert = async (id: string) => {
     try {
-      await alertStorage.deleteAlert(id)
-      setAlerts(prevAlerts => prevAlerts.filter(alert => alert.id !== id))
-      
+      if (!walletAddress) throw new Error('No wallet address')
+      await deleteAlert(id, walletAddress)
+      setAlerts(prev => prev.filter(alert => alert.id !== id))
       addNotification(
         createSignalNotification(
           'Alert Deleted',
@@ -290,6 +261,23 @@ export default function SignalsPage() {
     }
   }
 
+  // Toggle alert active state in Supabase
+  const handleToggleAlert = async (id: string) => {
+    try {
+      const alert = alerts.find(a => a.id === id)
+      if (!alert) return
+      const updated = await updateAlert({ ...alert, active: !alert.active })
+      setAlerts(prev => prev.map(a => a.id === updated.id ? updated : a))
+    } catch (error) {
+      console.error('Error toggling alert:', error)
+      toast({
+        title: "Error",
+        description: "Failed to toggle alert. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
+
   // Handle filter changes
   const handleFilterChange = (newFilters: SignalsFilters) => {
     setFilters(newFilters)
@@ -299,6 +287,12 @@ export default function SignalsPage() {
   const handleDeleteSignal = async (signalId: string) => {
     setSignals((prevSignals) => prevSignals.filter((signal) => signal.id !== signalId))
     await signalStorage.updateSignalStatus(signalId, 'invalidated')
+  }
+
+  // Handle editing an alert
+  const handleEditAlert = (alert: CryptoAlert) => {
+    setEditingAlert(alert)
+    setIsEditAlertOpen(true)
   }
 
   if (isLoading) {
@@ -527,6 +521,8 @@ export default function SignalsPage() {
             alerts={alerts}
             onDeleteAlert={handleDeleteAlert}
             onCreateAlert={() => setIsCreateAlertOpen(true)}
+            onToggleAlert={handleToggleAlert}
+            onEditAlert={handleEditAlert}
           />
 
           <Card className="bg-background border-border">
@@ -570,6 +566,15 @@ export default function SignalsPage() {
         open={isCreateAlertOpen}
         onOpenChange={setIsCreateAlertOpen}
         onCreateAlert={handleCreateAlert}
+        cryptoOptions={cryptoOptions}
+        walletAddress={walletAddress || ''}
+      />
+
+      <EditAlertDialog
+        open={isEditAlertOpen}
+        onOpenChange={setIsEditAlertOpen}
+        alert={editingAlert}
+        onEditAlert={handleSaveEditedAlert}
         cryptoOptions={cryptoOptions}
       />
     </>

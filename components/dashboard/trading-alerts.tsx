@@ -3,26 +3,17 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Bell, Trash2 } from "lucide-react"
+import { Plus, Bell, Trash2, Pencil } from "lucide-react"
 import { Switch } from "@/components/ui/switch"
 import Link from "next/link"
-
-interface CryptoAlert {
-  id: string
-  type: 'price' | 'volume' | 'trend'
-  symbol: string
-  condition: string
-  value: number
-  active: boolean
-  priority: 'high' | 'medium' | 'low'
-  timestamp: string
-}
+import { CryptoAlert } from '@/lib/api/crypto-api'
 
 interface TradingAlertsProps {
   alerts: CryptoAlert[]
   onCreateAlert: () => void
   onDeleteAlert: (id: string) => void
   onToggleAlert: (id: string) => void
+  onEditAlert: (alert: CryptoAlert) => void
   isPreview?: boolean
 }
 
@@ -31,6 +22,7 @@ export function TradingAlerts({
   onCreateAlert, 
   onDeleteAlert, 
   onToggleAlert,
+  onEditAlert,
   isPreview = false 
 }: TradingAlertsProps) {
   return (
@@ -66,6 +58,15 @@ export function TradingAlerts({
                   checked={alert.active}
                   onCheckedChange={() => onToggleAlert(alert.id)}
                 />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0 text-muted-foreground hover:text-blue-600"
+                  onClick={() => onEditAlert(alert)}
+                >
+                  <Pencil className="h-4 w-4" />
+                  <span className="sr-only">Edit alert</span>
+                </Button>
                 <Button
                   variant="ghost"
                   size="sm"

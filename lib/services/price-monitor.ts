@@ -49,7 +49,6 @@ export class PriceMonitor {
     }
 
     this.ws.onerror = (error) => {
-      console.error('WebSocket error:', error)
       toast({
         title: "Price Feed Error",
         description: "Failed to connect to price feed. Prices may not update in real-time.",
@@ -58,8 +57,6 @@ export class PriceMonitor {
     }
 
     this.ws.onclose = () => {
-      console.log('WebSocket closed')
-      // Attempt to reconnect after 5 seconds
       setTimeout(() => this.start(this.assets), 5000)
     }
   }

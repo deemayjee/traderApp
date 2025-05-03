@@ -1,9 +1,7 @@
-"use client"
-
 import type React from "react"
 import type { CryptoAlert } from "@/lib/api/crypto-api"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -12,59 +10,60 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { toast } from "@/components/ui/use-toast"
 
-interface CreateAlertDialogProps {
+interface EditAlertDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onCreateAlert?: (newAlert: Omit<CryptoAlert, "id">) => void
+  alert: CryptoAlert | null
+  onEditAlert: (updatedAlert: CryptoAlert) => void
   cryptoOptions?: Array<{ id: string; name: string; symbol: string; price: number }>
-  walletAddress: string
 }
 
-export function CreateAlertDialog({ open, onOpenChange, onCreateAlert, cryptoOptions = [], walletAddress }: CreateAlertDialogProps) {
-  const [asset, setAsset] = useState("BTC")
-  const [alertType, setAlertType] = useState("price")
-  const [condition, setCondition] = useState("above")
-  const [value, setValue] = useState("")
+export function EditAlertDialog({ open, onOpenChange, alert, onEditAlert, cryptoOptions = [] }: EditAlertDialogProps) {
+  const [asset, setAsset] = useState(alert?.symbol || "BTC")
+  const [alertType, setAlertType] = useState(alert?.type || "price")
+  const [condition, setCondition] = useState(alert?.condition || "above")
+  const [value, setValue] = useState(alert ? String(alert.value) : "")
+  const [priority, setPriority] = useState<'high' | 'medium' | 'low'>(alert?.priority || 'medium')
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [priority, setPriority] = useState<'high' | 'medium' | 'low'>('medium')
+
+  useEffect(() => {
+    if (alert) {
+      setAsset(alert.symbol)
+      setAlertType(alert.type)
+      setCondition(alert.condition)
+      setValue(String(alert.value))
+      setPriority(alert.priority || 'medium')
+    }
+  }, [alert])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
 
     try {
-      // Create the alert object
-      const newAlert: Omit<CryptoAlert, "id"> = {
-        type: alertType as "price" | "volume" | "trend",
+      if (!alert) return
+      const updatedAlert: CryptoAlert = {
+        ...alert,
         symbol: asset,
+        type: alertType as "price" | "volume" | "trend",
         condition,
         value: parseFloat(value),
-        active: true,
         priority,
-        timestamp: new Date().toISOString(),
+        timestamp: alert.timestamp, // keep original timestamp
         title: `${asset} ${alertType} Alert`,
-        description: `${asset} ${alertType} alert when price is ${condition} ${value}`,
-        wallet_address: walletAddress
+        description: `${asset} ${alertType} alert when price is ${condition} ${value}`
       }
-
-      // Call the onCreateAlert callback if provided
-      if (onCreateAlert) {
-        await onCreateAlert(newAlert)
-      }
-
+      onEditAlert(updatedAlert)
       toast({
-        title: "Alert created",
-        description: `${asset} ${alertType} alert when ${condition} ${value} has been created.`,
+        title: "Alert updated",
+        description: `${asset} ${alertType} alert has been updated.`,
       })
-
-      // Reset form and close dialog
-      setValue("")
       onOpenChange(false)
     } catch (error) {
-      console.error("Error creating alert:", error)
+      console.error("Error updating alert:", error)
       toast({
         title: "Error",
-        description: "Failed to create alert. Please try again.",
+        description: "Failed to update alert. Please try again.",
         variant: "destructive",
       })
     } finally {
@@ -76,7 +75,7 @@ export function CreateAlertDialog({ open, onOpenChange, onCreateAlert, cryptoOpt
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Create New Alert</DialogTitle>
+          <DialogTitle>Edit Alert</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           <div className="grid gap-4 py-4">
@@ -98,18 +97,18 @@ export function CreateAlertDialog({ open, onOpenChange, onCreateAlert, cryptoOpt
 
             <div className="grid gap-2">
               <Label>Alert Type</Label>
-              <RadioGroup value={alertType} onValueChange={setAlertType} className="flex gap-4">
+              <RadioGroup value={alertType} onValueChange={v => setAlertType(v as "price" | "volume" | "trend")} className="flex gap-4">
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="price" id="price" />
                   <Label htmlFor="price">Price</Label>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="rsi" id="rsi" />
-                  <Label htmlFor="rsi">RSI</Label>
-                </div>
-                <div className="flex items-center space-x-2">
                   <RadioGroupItem value="volume" id="volume" />
                   <Label htmlFor="volume">Volume</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="trend" id="trend" />
+                  <Label htmlFor="trend">Trend</Label>
                 </div>
               </RadioGroup>
             </div>
@@ -135,7 +134,7 @@ export function CreateAlertDialog({ open, onOpenChange, onCreateAlert, cryptoOpt
                 type="text"
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
-                placeholder={alertType === "price" ? "e.g. 50000" : alertType === "rsi" ? "e.g. 70" : "e.g. 1000000"}
+                placeholder={alertType === "price" ? "e.g. 50000" : alertType === "volume" ? "e.g. 1000000" : "e.g. uptrend"}
               />
             </div>
 
@@ -162,11 +161,11 @@ export function CreateAlertDialog({ open, onOpenChange, onCreateAlert, cryptoOpt
               Cancel
             </Button>
             <Button type="submit" disabled={isSubmitting || !value}>
-              {isSubmitting ? "Creating..." : "Create Alert"}
+              {isSubmitting ? "Saving..." : "Save Changes"}
             </Button>
           </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
   )
-}
+} 

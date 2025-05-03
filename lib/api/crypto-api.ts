@@ -1,6 +1,7 @@
 import { TechnicalAnalyzer } from '@/lib/services/technical-analyzer'
 import { OnChainAnalyzer } from '@/lib/services/onchain-analyzer'
 import { MacroAnalyzer } from '@/lib/services/macro-analyzer'
+import { generateUUID } from "@/lib/utils/uuid"
 
 // Types for cryptocurrency data
 export interface DexScreenerPair {
@@ -108,6 +109,7 @@ export interface FormattedCryptoAsset {
   positive: boolean
   sentiment: "Bullish" | "Neutral" | "Bearish"
   image?: string
+  priceHistory: number[]
 }
 
 export interface CryptoAlert {
@@ -119,24 +121,25 @@ export interface CryptoAlert {
   active: boolean
   priority: "high" | "medium" | "low"
   timestamp: string
-  description?: string
+  title: string
+  description: string
   targetPrice?: number
+  wallet_address: string
 }
 
 export interface CryptoSignal {
   id: string
-  agent: string
-  asset: string
-  symbol: string
   type: "Buy" | "Sell"
+  symbol: string
   signal: string
   price: string
   priceValue: number
   time: string
-  result: "Pending" | "Success" | "Failure"
-  profit?: string
   confidence: number
-  image?: string
+  result: "Success" | "Failure" | "Pending"
+  profit?: string
+  agent: string
+  updated: number
 }
 
 export interface PortfolioAsset {
@@ -272,6 +275,7 @@ export async function formatDexScreenerPair(pair: DexScreenerPair): Promise<Form
     volume: formatLargeNumber(volume24h),
     positive: changePercent > 0,
     sentiment,
+    priceHistory: [],
   }
 }
 
@@ -502,8 +506,109 @@ export async function fetchCryptosByIds(ids: string[], currency = "usd"): Promis
 
 // Add a function to generate real signals based on technical analysis
 export async function generateRealSignals(cryptoIds: string[]): Promise<CryptoSignal[]> {
-  // Return empty array as we want users to create their own signals
-  return []
+  try {
+    // Fetch current market data for the specified cryptocurrencies
+    const marketData = await fetchCryptoMarkets()
+    const filteredData = marketData.filter(crypto => cryptoIds.includes(crypto.id))
+
+    // Generate signals based on technical analysis
+    const signals: CryptoSignal[] = []
+
+    for (const crypto of filteredData) {
+      // Calculate technical indicators
+      const rsi = calculateRSI(crypto.priceHistory || [])
+      const macd = calculateMACD(crypto.priceHistory || [])
+      const sma20 = calculateSMA(crypto.priceHistory || [], 20)
+      const sma50 = calculateSMA(crypto.priceHistory || [], 50)
+
+      // Generate signals based on indicator combinations
+      if (rsi < 30 && macd.histogram > 0 && crypto.priceValue > sma20) {
+        signals.push({
+          id: generateUUID(),
+          type: "Buy",
+          symbol: crypto.symbol.toUpperCase(),
+          signal: "Strong buy signal: RSI oversold, MACD bullish crossover, price above SMA20",
+          price: `$${crypto.priceValue.toFixed(2)}`,
+          priceValue: crypto.priceValue,
+          time: "Just now",
+          confidence: Math.floor(Math.random() * 20) + 80, // 80-100% confidence
+          result: "Pending",
+          agent: "TrendMaster",
+          updated: Date.now()
+        })
+      } else if (rsi > 70 && macd.histogram < 0 && crypto.priceValue < sma50) {
+        signals.push({
+          id: generateUUID(),
+          type: "Sell",
+          symbol: crypto.symbol.toUpperCase(),
+          signal: "Strong sell signal: RSI overbought, MACD bearish crossover, price below SMA50",
+          price: `$${crypto.priceValue.toFixed(2)}`,
+          priceValue: crypto.priceValue,
+          time: "Just now",
+          confidence: Math.floor(Math.random() * 20) + 80, // 80-100% confidence
+          result: "Pending",
+          agent: "TrendMaster",
+          updated: Date.now()
+        })
+      }
+    }
+
+    return signals
+  } catch (error) {
+    console.error("Error generating signals:", error)
+    return []
+  }
+}
+
+// Helper function to calculate RSI
+function calculateRSI(prices: number[], period = 14): number {
+  if (prices.length < period + 1) return 50
+
+  let gains = 0
+  let losses = 0
+
+  for (let i = 1; i <= period; i++) {
+    const change = prices[i] - prices[i - 1]
+    if (change >= 0) {
+      gains += change
+    } else {
+      losses -= change
+    }
+  }
+
+  const avgGain = gains / period
+  const avgLoss = losses / period
+  const rs = avgGain / avgLoss
+  return 100 - (100 / (1 + rs))
+}
+
+// Helper function to calculate MACD
+function calculateMACD(prices: number[]): { macd: number; signal: number; histogram: number } {
+  const ema12 = calculateEMA(prices, 12)
+  const ema26 = calculateEMA(prices, 26)
+  const macd = ema12 - ema26
+  const signal = calculateEMA([macd], 9)
+  return { macd, signal, histogram: macd - signal }
+}
+
+// Helper function to calculate EMA
+function calculateEMA(prices: number[], period: number): number {
+  const k = 2 / (period + 1)
+  let ema = prices[0]
+
+  for (let i = 1; i < prices.length; i++) {
+    ema = prices[i] * k + ema * (1 - k)
+  }
+
+  return ema
+}
+
+// Helper function to calculate SMA
+function calculateSMA(prices: number[], period: number): number {
+  if (prices.length < period) return prices[prices.length - 1]
+  
+  const sum = prices.slice(-period).reduce((a, b) => a + b, 0)
+  return sum / period
 }
 
 // Function to format cryptocurrency data
@@ -548,69 +653,8 @@ export async function formatCryptoAsset(asset: CryptoAsset): Promise<FormattedCr
     image: asset.image,
     positive: priceChangePercentage > 0,
     sentiment,
+    priceHistory: [],
   }
-}
-
-// Generate mock alerts based on real crypto data
-export function generateAlertsFromCryptoData(cryptoAssets: FormattedCryptoAsset[]): CryptoAlert[] {
-  const alerts: CryptoAlert[] = []
-
-  // Use only the top 5 assets for alerts
-  const topAssets = cryptoAssets.slice(0, 5)
-
-  // Generate price alerts
-  topAssets.forEach((asset, index) => {
-    // Add null checks
-    const currentPrice = asset.priceValue
-    const priceChangePercentage = asset.changePercent
-    const symbol = asset.symbol
-
-    // Price alert
-    const isPriceUp = priceChangePercentage > 0
-    const targetPrice = isPriceUp
-      ? currentPrice * 1.05 // 5% higher
-      : currentPrice * 0.95 // 5% lower
-
-    alerts.push({
-      id: `price-${asset.id}`,
-      type: "price",
-      title: `${symbol} Price Alert`,
-      description: `Alert when ${symbol} ${isPriceUp ? "crosses above" : "drops below"} ${targetPrice.toFixed(2)}`,
-      active: index % 3 === 0, // Randomly set some as active
-      time: `Set ${index + 1} days ago`,
-      asset: asset.name,
-      symbol: symbol,
-      targetPrice,
-      currentPrice: currentPrice,
-    })
-
-    // Add some other alert types
-    if (index === 0) {
-      alerts.push({
-        id: `signal-${asset.id}`,
-        type: "signal",
-        title: `${symbol} RSI Alert`,
-        description: `Alert when ${symbol} RSI crosses ${isPriceUp ? "above 70" : "below 30"}`,
-        active: true,
-        time: "Set 1 week ago",
-        asset: asset.name,
-        symbol: symbol,
-      })
-    } else if (index === 1) {
-      alerts.push({
-        id: `whale-${asset.id}`,
-        type: "whale",
-        title: `${symbol} Whale Alert`,
-        description: `Alert on large ${symbol} transactions > $1M`,
-        active: false,
-        time: "Set 3 days ago",
-        asset: asset.name,
-        symbol: symbol,
-      })
-    }
-  })
-
-  return alerts
 }
 
 // Generate mock signals based on real crypto data
@@ -677,6 +721,7 @@ export function generateSignalsFromCryptoData(cryptoAssets: CryptoAsset[]): Cryp
       profit,
       confidence: Math.floor(Math.random() * 30) + 65, // 65-95% confidence
       image: asset.image,
+      updated: Date.now()
     })
   })
 

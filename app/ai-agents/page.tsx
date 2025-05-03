@@ -11,8 +11,9 @@ import { AgentPerformanceChart } from "@/components/ai-agents/agent-performance-
 import { Button } from "@/components/ui/button"
 import { Loader2 } from "lucide-react"
 import { aiAgentService } from "@/lib/services/ai-agent-service"
-import { agentStorage } from "@/lib/services/agent-storage"
+import { agentSupabase } from "@/lib/services/agent-supabase"
 import { useNotifications } from "@/lib/services/notification-service"
+import { useWalletAuth } from "@/components/auth/wallet-context"
 
 export default function AIAgents() {
   const [agents, setAgents] = useState<AIAgent[]>([])
@@ -22,21 +23,19 @@ export default function AIAgents() {
   const [signals, setSignals] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const { addNotification } = useNotifications()
+  const { user } = useWalletAuth()
+  const walletAddress = user?.address
 
-  // Load initial data
   useEffect(() => {
+    if (!walletAddress) return
     const loadInitialData = async () => {
       try {
         setIsLoading(true)
-
-        // Load agents from storage
-        const savedAgents = await agentStorage.getAllAgents()
-        
-        // If no agents exist, create default agents
+        const savedAgents = await agentSupabase.getAllAgents(walletAddress)
         if (savedAgents.length === 0) {
           const defaultAgents: AIAgent[] = [
             {
-              id: "1",
+              id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15),
               name: "TrendMaster",
               type: "Technical Analysis" as const,
               description: "Specialized in identifying trend reversals and breakouts using technical indicators.",
@@ -50,7 +49,7 @@ export default function AIAgents() {
               indicators: ["RSI", "MACD", "Moving Averages"],
             },
             {
-              id: "2",
+              id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15),
               name: "WhaleWatcher",
               type: "On-chain Analysis" as const,
               description: "Monitors large transactions and wallet movements to predict market impacts.",
@@ -64,7 +63,7 @@ export default function AIAgents() {
               indicators: ["Volume", "Support/Resistance"],
             },
             {
-              id: "3",
+              id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15),
               name: "MacroSage",
               type: "Macro Analysis" as const,
               description: "Analyzes macroeconomic factors and their impact on crypto markets.",
@@ -78,10 +77,8 @@ export default function AIAgents() {
               indicators: ["Moving Averages", "Volume"],
             },
           ]
-
-          // Save default agents
           for (const agent of defaultAgents) {
-            await agentStorage.saveAgent(agent)
+            await agentSupabase.saveAgent(agent, walletAddress)
           }
           setAgents(defaultAgents)
           setSelectedAgent(defaultAgents[0])
@@ -89,9 +86,7 @@ export default function AIAgents() {
           setAgents(savedAgents)
           setSelectedAgent(savedAgents[0])
         }
-
-        // Load recent signals
-        const recentSignals = await agentStorage.getRecentSignals(50)
+        const recentSignals = await agentSupabase.getRecentSignals(50)
         setSignals(recentSignals)
       } catch (error) {
         console.error("Error loading initial data:", error)
@@ -105,14 +100,21 @@ export default function AIAgents() {
         setIsLoading(false)
       }
     }
-
     loadInitialData()
-  }, [])
+  }, [walletAddress])
 
-  // Handle agent creation
   const handleCreateAgent = async (newAgent: AIAgent) => {
+    if (!walletAddress) {
+      addNotification({
+        title: "Error",
+        message: "Wallet not connected. Please connect your wallet first.",
+        type: "error",
+        priority: "high",
+      })
+      return
+    }
     try {
-      await agentStorage.saveAgent(newAgent)
+      await agentSupabase.saveAgent(newAgent, walletAddress)
       setAgents((prev) => [...prev, newAgent])
       addNotification({
         title: "Success",
@@ -131,29 +133,32 @@ export default function AIAgents() {
     }
   }
 
-  // Handle agent selection
   const handleSelectAgent = (agent: AIAgent) => {
     setSelectedAgent(agent)
   }
 
-  // Handle agent toggle (active/inactive)
   const handleToggleAgent = async (agentId: string, active: boolean) => {
+    if (!walletAddress) {
+      addNotification({
+        title: "Error",
+        message: "Wallet not connected. Please connect your wallet first.",
+        type: "error",
+        priority: "high",
+      })
+      return
+    }
     try {
       const agent = agents.find((a) => a.id === agentId)
       if (!agent) return
-
       const updatedAgent = { ...agent, active }
-      await agentStorage.saveAgent(updatedAgent)
-
+      await agentSupabase.saveAgent(updatedAgent, walletAddress)
       const updatedAgents = agents.map((a) =>
         a.id === agentId ? updatedAgent : a
       )
       setAgents(updatedAgents)
-
       if (selectedAgent?.id === agentId) {
         setSelectedAgent(updatedAgent)
       }
-
       addNotification({
         title: "Agent Updated",
         message: `${agent.name} is now ${active ? "active" : "inactive"}`,
@@ -171,16 +176,19 @@ export default function AIAgents() {
     }
   }
 
-  // Handle signal generation
   const handleSignalGenerated = async (signal: any) => {
+    if (!walletAddress) {
+      addNotification({
+        title: "Error",
+        message: "Wallet not connected. Please connect your wallet first.",
+        type: "error",
+        priority: "high",
+      })
+      return
+    }
     try {
-      // Save signal to storage
-      await agentStorage.saveSignal(signal)
-
-      // Add the new signal to the list
+      await agentSupabase.saveSignal(signal)
       setSignals((prev) => [signal, ...prev])
-
-      // Update the agent's last signal time and signal count
       const agent = agents.find((a) => a.id === signal.agentId)
       if (agent) {
         const updatedAgent = {
@@ -188,19 +196,15 @@ export default function AIAgents() {
           lastSignal: "Just now",
           signals: agent.signals + 1,
         }
-        await agentStorage.saveAgent(updatedAgent)
-
+        await agentSupabase.saveAgent(updatedAgent, walletAddress)
         const updatedAgents = agents.map((a) =>
           a.id === signal.agentId ? updatedAgent : a
         )
         setAgents(updatedAgents)
-
         if (selectedAgent?.id === signal.agentId) {
           setSelectedAgent(updatedAgent)
         }
       }
-
-      // Send notification
       addNotification({
         title: `New Signal: ${signal.asset} ${signal.type}`,
         message: signal.signal,
@@ -220,13 +224,29 @@ export default function AIAgents() {
     }
   }
 
-  // Handle create new agent button click
   const handleCreateNewAgent = () => {
+    if (!walletAddress) {
+      addNotification({
+        title: "Error",
+        message: "Wallet not connected. Please connect your wallet first.",
+        type: "error",
+        priority: "high",
+      })
+      return
+    }
     setIsCreateDialogOpen(true)
   }
 
-  // Handle generate signal button click
   const handleGenerateSignal = () => {
+    if (!walletAddress) {
+      addNotification({
+        title: "Error",
+        message: "Wallet not connected. Please connect your wallet first.",
+        type: "error",
+        priority: "high",
+      })
+      return
+    }
     setIsGenerateSignalOpen(true)
   }
 
