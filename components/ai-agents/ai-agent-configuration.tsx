@@ -9,10 +9,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox"
 import { Settings, Save, HelpCircle, Loader2 } from "lucide-react"
 import { useState, useEffect } from "react"
-import type { AIAgent } from "./create-agent-dialog"
+import type { AIAgent, AIAgentType } from "./create-agent-dialog"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
+import { agentSupabase } from "@/lib/services/agent-supabase"
+import { useNotifications } from "@/lib/services/notification-service"
+import { useWalletAuth } from "@/components/auth/wallet-context"
 
 interface AIAgentConfigurationProps {
   agent: AIAgent
@@ -27,6 +30,9 @@ export function AIAgentConfiguration({ agent }: AIAgentConfigurationProps) {
   const [indicators, setIndicators] = useState(agent.indicators)
   const [hasChanges, setHasChanges] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const { addNotification } = useNotifications()
+  const { user } = useWalletAuth()
+  const walletAddress = user?.address
 
   useEffect(() => {
     setName(agent.name)
@@ -39,13 +45,42 @@ export function AIAgentConfiguration({ agent }: AIAgentConfigurationProps) {
   }, [agent])
 
   const handleSave = async () => {
+    if (!walletAddress) {
+      addNotification({
+        title: "Error",
+        message: "Wallet not connected. Please connect your wallet first.",
+        type: "error",
+        priority: "high",
+      })
+      return
+    }
     setIsSaving(true)
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      const updatedAgent: AIAgent = {
+        ...agent,
+        name,
+        type: type.replace("-", " ").replace(/\b\w/g, l => l.toUpperCase()) as AIAgentType,
+        description,
+        riskTolerance: riskTolerance[0],
+        focusAssets,
+        indicators,
+      }
+      await agentSupabase.saveAgent(updatedAgent, walletAddress)
       setHasChanges(false)
+      addNotification({
+        title: "Success",
+        message: "Agent configuration updated successfully",
+        type: "success",
+        priority: "medium",
+      })
     } catch (error) {
       console.error("Error saving configuration:", error)
+      addNotification({
+        title: "Error",
+        message: "Failed to update agent configuration",
+        type: "error",
+        priority: "high",
+      })
     } finally {
       setIsSaving(false)
     }

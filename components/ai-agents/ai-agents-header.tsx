@@ -5,10 +5,9 @@ import { Brain, Plus, HelpCircle } from "lucide-react"
 
 interface AIAgentsHeaderProps {
   onCreateNewAgent: () => void
-  onGenerateSignal: () => void
 }
 
-export function AIAgentsHeader({ onCreateNewAgent, onGenerateSignal }: AIAgentsHeaderProps) {
+export function AIAgentsHeader({ onCreateNewAgent }: AIAgentsHeaderProps) {
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
@@ -21,10 +20,9 @@ export function AIAgentsHeader({ onCreateNewAgent, onGenerateSignal }: AIAgentsH
           <Button variant="outline" size="sm" className="border-gray-200">
             <HelpCircle size={16} className="mr-2" /> How It Works
           </Button>
-          <Button className="bg-black text-white hover:bg-gray-800" onClick={onCreateNewAgent}>
+          <Button className="" onClick={onCreateNewAgent}>
             <Plus size={16} className="mr-2" /> Create New Agent
           </Button>
-          <Button onClick={onGenerateSignal}>Generate Signal</Button>
         </div>
       </div>
 

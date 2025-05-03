@@ -24,7 +24,7 @@ class AgentSupabase {
     const { error } = await supabase
       .from('ai_agents')
       .upsert({
-        id: agent.id,
+        id: agent.id || undefined,
         name: agent.name,
         type: agent.type,
         description: agent.description,
@@ -41,6 +41,8 @@ class AgentSupabase {
           signals: agent.signals,
           lastSignal: agent.lastSignal,
         },
+      }, {
+        onConflict: 'id'
       })
     if (error) throw error
   }
@@ -85,6 +87,24 @@ class AgentSupabase {
       .from('ai_signals')
       .upsert({ ...signal })
     if (error) throw error
+  }
+
+  async deleteAgent(agentId: string, wallet_address?: string): Promise<void> {
+    if (!wallet_address) throw new Error('Wallet address is required to delete an agent')
+
+    // Set the wallet address for RLS policies
+    await setCurrentWalletAddress(wallet_address)
+
+    const { error } = await supabase
+      .from('ai_agents')
+      .delete()
+      .eq('id', agentId)
+      .eq('wallet_address', wallet_address)
+
+    if (error) {
+      console.error('Error deleting agent:', error)
+      throw error
+    }
   }
 
   async getSignalsByAgent(agentId: string): Promise<Signal[]> {

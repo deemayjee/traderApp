@@ -5,24 +5,34 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { TrendingUp, BarChart3, Brain, Settings, ArrowUpRight } from "lucide-react"
+import { TrendingUp, BarChart3, Brain, Trash2, ArrowUpRight } from "lucide-react"
 import { useState } from "react"
 import { useNotifications } from "@/contexts/notification-context"
 import type { AIAgent } from "./create-agent-dialog"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 interface AIAgentsListProps {
   agents: AIAgent[]
   selectedAgent: AIAgent | null
   onSelectAgent: (agent: AIAgent) => void
   onToggleAgent: (agentId: string, active: boolean) => void
+  onDeleteAgent: (agentId: string) => void
 }
 
-export function AIAgentsList({ agents, selectedAgent, onSelectAgent, onToggleAgent }: AIAgentsListProps) {
+export function AIAgentsList({ agents, selectedAgent, onSelectAgent, onToggleAgent, onDeleteAgent }: AIAgentsListProps) {
   const [activeTab, setActiveTab] = useState("my-agents")
   const [searchQuery, setSearchQuery] = useState("")
   const [sortBy, setSortBy] = useState("name")
+  const [agentToDelete, setAgentToDelete] = useState<AIAgent | null>(null)
   const { addNotification, preferences } = useNotifications()
 
   // Filter and sort agents
@@ -164,10 +174,49 @@ export function AIAgentsList({ agents, selectedAgent, onSelectAgent, onToggleAge
                   Last: {agent.lastSignal}
                 </div>
               </div>
+              <div className="mt-3 flex items-center space-x-4 text-sm text-gray-500">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setAgentToDelete(agent)
+                  }}
+                >
+                  <Trash2 className="h-4 w-4 text-red-500" />
+                </Button>
+              </div>
             </div>
           ))}
         </div>
       </CardContent>
+
+      <Dialog open={!!agentToDelete} onOpenChange={() => setAgentToDelete(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Agent</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete {agentToDelete?.name}? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAgentToDelete(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (agentToDelete) {
+                  onDeleteAgent(agentToDelete.id)
+                  setAgentToDelete(null)
+                }
+              }}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }
