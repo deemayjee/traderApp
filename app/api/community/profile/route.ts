@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
-export async function GET(req: Request) {
+export const dynamic = 'force-dynamic' // This ensures the route is dynamic
+
+export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(req.url)
-    const address = searchParams.get('address')
-    const currentUserAddress = searchParams.get('currentUserAddress')
+    const url = new URL(request.url)
+    const address = url.searchParams.get('address')
+    const currentUserAddress = url.searchParams.get('currentUserAddress')
     
     if (!address) {
       return NextResponse.json(

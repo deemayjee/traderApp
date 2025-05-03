@@ -98,7 +98,8 @@ export default function Dashboard() {
       const updatedToken = updatedAssets.find(asset => asset.symbol === selectedToken.symbol)
       if (updatedToken && (
         updatedToken.price !== selectedToken.price ||
-        updatedToken.change !== selectedToken.change
+        updatedToken.change !== selectedToken.change ||
+        updatedToken.volume !== selectedToken.volume
       )) {
         setSelectedToken(updatedToken)
       }

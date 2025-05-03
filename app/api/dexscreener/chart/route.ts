@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server'
 
-export async function GET(req: Request) {
+export const dynamic = 'force-dynamic' // This ensures the route is dynamic
+
+export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(req.url)
-    const symbol = searchParams.get('symbol')
-    const interval = searchParams.get('interval') || '1h'
-    const limit = parseInt(searchParams.get('limit') || '24', 10)
+    const url = new URL(request.url)
+    const symbol = url.searchParams.get('symbol')
+    const interval = url.searchParams.get('interval') || '1h'
+    const limit = parseInt(url.searchParams.get('limit') || '24', 10)
 
     if (!symbol) {
       return NextResponse.json(

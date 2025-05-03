@@ -26,7 +26,7 @@ export function HeroSection() {
       <div className="container relative z-10 mx-auto px-4 text-center">
         <h1 className="text-4xl md:text-6xl font-bold tracking-tighter mb-6">
           <span className="text-gray-900">PallyTraders</span>
-          <div className="mt-2 text-3xl md:text-5xl text-gray-600">a crypto intelligence platform</div>
+          <div className="mt-2 text-3xl md:text-5xl text-gray-600">your friendy AI Trading Assistant</div>
         </h1>
         <p className="max-w-2xl mx-auto text-gray-600 text-lg mb-10">
           Next-generation social trading platform connecting humans and AI agents, providing valuable crypto insights

@@ -5,6 +5,8 @@ import { verifySignature } from "@/lib/utils/auth"
 
 const settingsService = new SettingsService()
 
+export const dynamic = 'force-dynamic' // This ensures the route is dynamic
+
 export async function GET(request: Request) {
   try {
     const { publicKey, signature } = await verifySignature(request)
@@ -34,11 +36,8 @@ export async function PUT(request: Request) {
     const body = await request.json()
     const preferences: Partial<UserPreferences> = {
       theme: body.theme,
-      language: body.language,
-      currency: body.currency,
-      compact_mode: body.compact_mode,
-      show_advanced_charts: body.show_advanced_charts,
-      enable_animations: body.enable_animations
+      last_signature: signature,
+      last_active: new Date().toISOString()
     }
 
     const updatedPreferences = await settingsService.updatePreferences(publicKey, preferences)

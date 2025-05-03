@@ -1,5 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { NextAuthOptions } from "next-auth"
+import { WalletAdapter } from "@/lib/wallet-adapter"
 
 type User = {
   wallet: string;
@@ -8,10 +10,8 @@ type User = {
   profile?: any;
 }
 
-export async function auth(): Promise<User | null> {
+export async function auth(cookieStore: ReturnType<typeof cookies>): Promise<User | null> {
   try {
-    const cookieStore = cookies()
-    
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -60,7 +60,65 @@ export async function auth(): Promise<User | null> {
       profile: userData.user_profiles
     }
   } catch (error) {
-    console.error('Error in auth function:', error)
+    let errMsg = 'Unknown error';
+    if (typeof error === 'string') errMsg = error;
+    else if (error && typeof error === 'object' && 'message' in error) errMsg = (error as any).message;
+    else errMsg = String(error);
+    console.error('Error in auth function:', errMsg);
     return null
   }
+}
+
+export const authOptions: NextAuthOptions = {
+  providers: [
+    {
+      id: "wallet",
+      name: "Wallet",
+      type: "credentials",
+      credentials: {
+        address: { label: "Wallet Address", type: "text" },
+        signature: { label: "Signature", type: "text" },
+      },
+      async authorize(credentials) {
+        if (!credentials?.address || !credentials?.signature) {
+          return null
+        }
+
+        // Verify the signature
+        const isValid = await WalletAdapter.verifySignature(
+          credentials.address,
+          credentials.signature
+        )
+
+        if (!isValid) {
+          return null
+        }
+
+        return {
+          id: credentials.address,
+          address: credentials.address,
+        }
+      },
+    },
+  ],
+  session: {
+    strategy: "jwt",
+  },
+  callbacks: {
+    async jwt({ token, user }) {
+      if (user) {
+        token.address = user.address
+      }
+      return token
+    },
+    async session({ session, token }) {
+      if (token) {
+        session.user.address = String(token.address)
+      }
+      return session
+    },
+  },
+  pages: {
+    signIn: "/auth/signin",
+  },
 } 

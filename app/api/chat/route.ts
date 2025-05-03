@@ -9,7 +9,7 @@ export async function POST(req: Request) {
       model: openai("gpt-4o"),
       messages,
       system:
-        "You are CryptoSage AI, an expert crypto trading assistant. Provide concise, accurate information about cryptocurrencies, trading strategies, market analysis, and technical indicators. Base your responses on factual information and clearly indicate when you're providing opinions or speculative analysis.",
+        "You are PallyTrader AI, an expert crypto trading assistant. Provide concise, accurate information about cryptocurrencies, trading strategies, market analysis, and technical indicators. Base your responses on factual information and clearly indicate when you're providing opinions or speculative analysis.",
     })
 
     return result.toDataStreamResponse()
