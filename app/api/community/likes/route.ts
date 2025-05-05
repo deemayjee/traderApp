@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-import { auth } from '@/auth'
+import { supabaseAdmin } from '@/lib/supabase/server-admin'
 
 // Toggle like on a post
 export async function POST(request: Request) {
@@ -14,51 +13,85 @@ export async function POST(request: Request) {
       )
     }
 
-    const supabase = createClient()
-
     // Check if the user has already liked the post
-    const { data: existingLike } = await supabase
+    const { data: existingLike, error: checkError } = await supabaseAdmin
       .from('community_post_likes')
       .select('id')
       .eq('post_id', postId)
       .eq('wallet_address', walletAddress)
       .single()
 
+    if (checkError && checkError.code !== 'PGRST116') { // PGRST116 is "not found" error
+      console.error('Error checking existing like:', checkError)
+      return NextResponse.json(
+        { error: 'Failed to check existing like' },
+        { status: 500 }
+      )
+    }
+
     let liked = false
     let count = 0
 
     if (existingLike) {
       // Unlike the post
-      const { error: deleteError } = await supabase
+      const { error: deleteError } = await supabaseAdmin
         .from('community_post_likes')
         .delete()
         .eq('id', existingLike.id)
 
-      if (deleteError) throw deleteError
+      if (deleteError) {
+        console.error('Error deleting like:', deleteError)
+        return NextResponse.json(
+          { error: 'Failed to unlike post' },
+          { status: 500 }
+        )
+      }
 
       // Get updated like count
-      const { count: likeCount } = await supabase
+      const { count: likeCount, error: countError } = await supabaseAdmin
         .from('community_post_likes')
         .select('*', { count: 'exact', head: true })
         .eq('post_id', postId)
 
+      if (countError) {
+        console.error('Error getting like count:', countError)
+        return NextResponse.json(
+          { error: 'Failed to get like count' },
+          { status: 500 }
+        )
+      }
+
       count = likeCount || 0
     } else {
       // Like the post
-      const { error: insertError } = await supabase
+      const { error: insertError } = await supabaseAdmin
         .from('community_post_likes')
         .insert({
           post_id: postId,
           wallet_address: walletAddress
         })
 
-      if (insertError) throw insertError
+      if (insertError) {
+        console.error('Error inserting like:', insertError)
+        return NextResponse.json(
+          { error: 'Failed to like post' },
+          { status: 500 }
+        )
+      }
 
       // Get updated like count
-      const { count: likeCount } = await supabase
+      const { count: likeCount, error: countError } = await supabaseAdmin
         .from('community_post_likes')
         .select('*', { count: 'exact', head: true })
         .eq('post_id', postId)
+
+      if (countError) {
+        console.error('Error getting like count:', countError)
+        return NextResponse.json(
+          { error: 'Failed to get like count' },
+          { status: 500 }
+        )
+      }
 
       count = likeCount || 0
       liked = true
@@ -99,10 +132,8 @@ export async function PUT(req: Request) {
       )
     }
     
-    const supabase = createClient()
-    
     // Check if the user already liked this comment
-    const { data: existingLike, error: checkError } = await supabase
+    const { data: existingLike, error: checkError } = await supabaseAdmin
       .from('community_comment_likes')
       .select()
       .eq('wallet_address', walletAddress)
@@ -121,7 +152,7 @@ export async function PUT(req: Request) {
     
     if (existingLike) {
       // Unlike: delete the existing like
-      const { error: unlikeError } = await supabase
+      const { error: unlikeError } = await supabaseAdmin
         .from('community_comment_likes')
         .delete()
         .eq('wallet_address', walletAddress)
@@ -138,7 +169,7 @@ export async function PUT(req: Request) {
       result = { liked: false }
     } else {
       // Like: insert a new like
-      const { error: likeError } = await supabase
+      const { error: likeError } = await supabaseAdmin
         .from('community_comment_likes')
         .insert({
           wallet_address: walletAddress,
@@ -158,7 +189,7 @@ export async function PUT(req: Request) {
     }
     
     // Get updated like count
-    const { data: likeCount, error: countError } = await supabase
+    const { data: likeCount, error: countError } = await supabaseAdmin
       .from('community_comment_likes')
       .select('id', { count: 'exact' })
       .eq('comment_id', commentId)

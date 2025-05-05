@@ -83,25 +83,74 @@ export default function CommunityPage() {
   const { addNotification } = useNotifications()
   const { toast } = useToast()
   const router = useRouter()
-  const settingsService = new SettingsService()
+  const settingsService = new SettingsService(false)
   const [profileData, setProfileData] = useState<any>(null)
+  const [isLiking, setIsLiking] = useState<string | null>(null)
 
-  // Load profile data
-  useEffect(() => {
-    const fetchProfile = async () => {
-      if (user?.address) {
-        try {
-          const profile = await settingsService.getProfile(user.address)
-          if (profile) {
-            setProfileData(profile)
-          }
-        } catch (error) {
-          console.error('Error fetching profile:', error)
+  // Fetch profile data
+  const fetchProfile = async () => {
+    if (user?.address) {
+      try {
+        const profile = await settingsService.getProfile(user.address)
+        if (profile) {
+          setProfileData(profile)
         }
+      } catch (error) {
+        console.error('Error fetching profile:', error)
       }
     }
-    fetchProfile()
-  }, [user?.address])
+  }
+
+  // Load initial data
+  useEffect(() => {
+    if (user?.address) {
+      fetchPosts()
+      fetchUserStats()
+      fetchProfile()
+    }
+    
+    // Load initial top traders and topics
+    const initialTopTraders = [
+      {
+        name: "Alex Thompson",
+        handle: "@alexthompson",
+        avatar: "/placeholder.svg?height=40&width=40",
+        verified: true,
+        roi: "+187.4%",
+        followers: 1245,
+        following: true,
+      },
+      {
+        name: "Sarah Chen",
+        handle: "@sarahtrader",
+        avatar: "/placeholder.svg?height=40&width=40",
+        verified: true,
+        roi: "+142.8%",
+        followers: 876,
+        following: false,
+      },
+      {
+        name: "Michael Rodriguez",
+        handle: "@cryptomike",
+        avatar: "/placeholder.svg?height=40&width=40",
+        verified: false,
+        roi: "+98.3%",
+        followers: 543,
+        following: true,
+      },
+    ]
+
+    const initialTopics = [
+      { name: "Bitcoin", posts: 1245 },
+      { name: "Ethereum", posts: 876 },
+      { name: "DeFi", posts: 543 },
+      { name: "NFTs", posts: 321 },
+      { name: "Altcoins", posts: 210 },
+    ]
+
+    setTopTraders(initialTopTraders)
+    setTopics(initialTopics)
+  }, [])
 
   // Load posts
   const fetchPosts = async () => {
@@ -234,54 +283,6 @@ export default function CommunityPage() {
     }
   }
 
-  // Load initial data
-  useEffect(() => {
-    fetchPosts()
-    fetchUserStats()
-    
-    // Load initial top traders and topics
-    const initialTopTraders = [
-      {
-        name: "Alex Thompson",
-        handle: "@alexthompson",
-        avatar: "/placeholder.svg?height=40&width=40",
-        verified: true,
-        roi: "+187.4%",
-        followers: 1245,
-        following: true,
-      },
-      {
-        name: "Sarah Chen",
-        handle: "@sarahtrader",
-        avatar: "/placeholder.svg?height=40&width=40",
-        verified: true,
-        roi: "+142.8%",
-        followers: 876,
-        following: false,
-      },
-      {
-        name: "Michael Rodriguez",
-        handle: "@cryptomike",
-        avatar: "/placeholder.svg?height=40&width=40",
-        verified: false,
-        roi: "+98.3%",
-        followers: 543,
-        following: true,
-      },
-    ]
-
-    const initialTopics = [
-      { name: "Bitcoin", posts: 1245 },
-      { name: "Ethereum", posts: 876 },
-      { name: "DeFi", posts: 543 },
-      { name: "NFTs", posts: 321 },
-      { name: "Altcoins", posts: 210 },
-    ]
-
-    setTopTraders(initialTopTraders)
-    setTopics(initialTopics)
-  }, [])
-
   // Refetch posts when tab changes
   useEffect(() => {
     fetchPosts()
@@ -344,7 +345,12 @@ export default function CommunityPage() {
       return
     }
     
+    // Prevent multiple like attempts
+    if (isLiking === postId) return
+    
     try {
+      setIsLiking(postId)
+      
       // Find the current post state
       const currentPost = posts.find(post => post.id === postId)
       if (!currentPost) return
@@ -416,6 +422,8 @@ export default function CommunityPage() {
             : post
         )
       )
+    } finally {
+      setIsLiking(null)
     }
   }
 
@@ -695,7 +703,9 @@ export default function CommunityPage() {
             c.id === commentId
               ? {
                   ...c,
-                  likes: c.userLiked ? c.likes - 1 : c.likes + 1,
+                  likes: c.userLiked 
+                    ? c.likes.filter(like => like !== user?.address)
+                    : [...c.likes, user?.address].filter(Boolean),
                   userLiked: !c.userLiked,
                 }
               : c
@@ -1015,8 +1025,8 @@ export default function CommunityPage() {
                       src={profileData?.avatar_url || "/placeholder.svg"} 
                       alt={profileData?.username || "User"} 
                     />
-                    <AvatarFallback>
-                      {profileData?.username?.charAt(0)?.toUpperCase() || user?.address?.charAt(0)?.toUpperCase() || "U"}
+                    <AvatarFallback className="text-xl">
+                      {(profileData?.username || user?.address?.slice(0, 2) || 'A').charAt(0).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                 ) : (
@@ -1040,8 +1050,8 @@ export default function CommunityPage() {
                           />
                           <AvatarFallback>
                             {typeof post.author === 'string' 
-                              ? post.author.charAt(0).toUpperCase() 
-                              : post.author.username.charAt(0).toUpperCase()}
+                              ? (post.author || '').charAt(0).toUpperCase() 
+                              : (post.author?.username || '').charAt(0).toUpperCase()}
                           </AvatarFallback>
                         </Avatar>
                         <div className="flex-1">
@@ -1095,6 +1105,7 @@ export default function CommunityPage() {
                               size="sm"
                               className={`${post.userLiked ? "text-red-500 hover:text-red-600" : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"}`}
                               onClick={() => handleLikePost(post.id)}
+                              disabled={isLiking === post.id}
                             >
                               <ThumbsUp size={16} className={`mr-1 ${post.userLiked ? "fill-red-500" : ""}`} /> {Number(post.likes || 0)}
                             </Button>
@@ -1164,19 +1175,21 @@ export default function CommunityPage() {
                 <Avatar className="h-20 w-20 mb-3">
                   <AvatarImage 
                     src={profileData?.avatar_url || "/placeholder.svg"} 
-                    alt={profileData?.username || "User"} 
+                    alt={profileData?.username || user?.address?.slice(0, 6) || "User"} 
                   />
                   <AvatarFallback className="text-xl">
-                    {profileData?.username?.charAt(0)?.toUpperCase() || user?.address?.charAt(0)?.toUpperCase() || "U"}
+                    {(profileData?.username || user?.address?.slice(0, 2) || 'A').charAt(0).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
                 
                 <h3 className="font-semibold text-lg mb-1">
-                  {profileData?.username || (user?.address ? `${user.address.substring(0, 4)}...${user.address.substring(user.address.length - 4)}` : "Anonymous User")}
+                  {profileData?.username || (user?.address ? `${user.address.slice(0, 6)}...${user.address.slice(-4)}` : "Anonymous User")}
                 </h3>
                 
                 <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                  {profileData?.username ? `@${profileData.username.toLowerCase().replace(/\s+/g, "")}` : (user?.address ? `${user.address.substring(0, 6)}...${user.address.substring(user.address.length - 4)}` : "@anonymous")}
+                  {profileData?.username 
+                    ? `@${profileData.username.toLowerCase().replace(/\s+/g, "")}` 
+                    : (user?.address ? `${user.address.slice(0, 6)}...${user.address.slice(-4)}` : "@anonymous")}
                 </p>
                 
                 <div className="flex items-center justify-center w-full mb-4">

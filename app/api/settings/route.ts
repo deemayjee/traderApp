@@ -2,10 +2,9 @@ import { NextResponse } from "next/server"
 import { SettingsService } from "@/lib/services/settings"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
-import { createClient } from "@/lib/supabase/server"
+import { supabaseAdmin } from "@/lib/supabase/server-admin"
 
 const settingsService = new SettingsService()
-const supabase = createClient()
 
 export const dynamic = 'force-dynamic' // This ensures the route is dynamic
 
@@ -42,7 +41,7 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "Settings are required" }, { status: 400 })
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('settings')
       .update({
         ...settings,

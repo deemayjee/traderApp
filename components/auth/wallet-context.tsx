@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from "react"
 import { usePrivy } from '@privy-io/react-auth';
+import { supabase } from '@/lib/supabase'
 
 type WalletData = {
   address: string
@@ -90,6 +91,18 @@ export function WalletAuthProvider({ children }: { children: React.ReactNode }) 
               } else {
                 const data = await response.json();
                 console.log("User successfully synced with Supabase:", data);
+
+                // Set the wallet address in the session
+                try {
+                  const { error: setWalletError } = await supabase.rpc('set_current_wallet_address', {
+                    wallet_address: walletAddress
+                  });
+                  if (setWalletError) {
+                    console.error("Error setting wallet address:", setWalletError);
+                  }
+                } catch (error) {
+                  console.error("Error setting wallet address:", error);
+                }
               }
             } catch (error) {
               console.error("Error syncing user with Supabase:", error);

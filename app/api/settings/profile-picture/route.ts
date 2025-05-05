@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { supabaseAdmin } from '@/lib/supabase/server-admin'
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ALLOWED_FILE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
@@ -28,8 +28,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'File type not supported. Please upload a JPEG, PNG, GIF, or WebP image.' }, { status: 400 })
     }
     
-    const supabase = createClient()
-    
     // Generate a unique filename
     const fileExtension = file.name.split('.').pop()
     const fileName = `${walletAddress}-${Date.now()}.${fileExtension}`
@@ -40,7 +38,7 @@ export async function POST(request: Request) {
     
     // Upload file to storage
     console.log('Attempting to upload file:', fileName)
-    const { data, error } = await supabase.storage
+    const { data, error } = await supabaseAdmin.storage
       .from('profile-pictures')
       .upload(fileName, uint8Array, {
         contentType: file.type,
@@ -57,14 +55,14 @@ export async function POST(request: Request) {
     }
     
     // Get public URL
-    const { data: { publicUrl } } = supabase.storage
+    const { data: { publicUrl } } = supabaseAdmin.storage
       .from('profile-pictures')
       .getPublicUrl(fileName)
     
     console.log('File uploaded successfully. Public URL:', publicUrl)
     
     // Update user profile with new avatar URL
-    const { error: updateError } = await supabase
+    const { error: updateError } = await supabaseAdmin
       .from('user_profiles')
       .update({ avatar_url: publicUrl })
       .eq('wallet_address', walletAddress)
@@ -72,7 +70,7 @@ export async function POST(request: Request) {
     if (updateError) {
       console.error('Error updating user profile:', updateError)
       // Try to delete the uploaded file if profile update fails
-      await supabase.storage
+      await supabaseAdmin.storage
         .from('profile-pictures')
         .remove([fileName])
       return NextResponse.json({ 
@@ -82,7 +80,7 @@ export async function POST(request: Request) {
     }
     
     // Verify the update was successful
-    const { data: updatedProfile, error: verifyError } = await supabase
+    const { data: updatedProfile, error: verifyError } = await supabaseAdmin
       .from('user_profiles')
       .select('avatar_url')
       .eq('wallet_address', walletAddress)
@@ -120,10 +118,8 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'Wallet address is required' }, { status: 400 })
     }
     
-    const supabase = createClient()
-    
     // Get current avatar URL to delete from storage
-    const { data: userData, error: fetchError } = await supabase
+    const { data: userData, error: fetchError } = await supabaseAdmin
       .from('user_profiles')
       .select('avatar_url')
       .eq('wallet_address', walletAddress)
@@ -141,14 +137,14 @@ export async function DELETE(request: Request) {
       
       if (fileName) {
         // Delete file from storage (ignoring errors if file doesn't exist)
-        await supabase.storage
+        await supabaseAdmin.storage
           .from('profile-pictures')
           .remove([fileName])
       }
     }
     
     // Update user profile to remove avatar URL
-    const { error: updateError } = await supabase
+    const { error: updateError } = await supabaseAdmin
       .from('user_profiles')
       .update({ avatar_url: null })
       .eq('wallet_address', walletAddress)

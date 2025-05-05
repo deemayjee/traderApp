@@ -1,14 +1,5 @@
 import { NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-if (!supabaseUrl || !supabaseServiceKey) {
-  throw new Error("Missing Supabase environment variables")
-}
-
-const supabase = createClient(supabaseUrl, supabaseServiceKey)
+import { supabaseAdmin } from "@/lib/supabase/server-admin"
 
 export async function POST(request: Request) {
   try {
@@ -22,7 +13,7 @@ export async function POST(request: Request) {
     }
 
     // First check if the code exists and is active
-    const { data: checkData, error: checkError } = await supabase
+    const { data: checkData, error: checkError } = await supabaseAdmin
       .from('beta_access_codes')
       .select('is_active')
       .eq('code', code)
@@ -41,7 +32,7 @@ export async function POST(request: Request) {
     }
 
     // If code is valid, deactivate it
-    const { error: deactivateError } = await supabase
+    const { error: deactivateError } = await supabaseAdmin
       .from('beta_access_codes')
       .update({ is_active: false })
       .eq('code', code)

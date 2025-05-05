@@ -105,7 +105,6 @@ export async function getTokenPrice(mintAddress: string): Promise<TokenPrice> {
     }
 
     // For other tokens, try to get their price from CoinGecko
-    // First, get the token's symbol from metadata
     const metadata = await getTokenMetadata(mintAddress)
     if (!metadata || !metadata.symbol) {
       throw new Error('No metadata found for token')
@@ -114,28 +113,39 @@ export async function getTokenPrice(mintAddress: string): Promise<TokenPrice> {
     // Search for the token on CoinGecko
     const searchResponse = await fetch(`https://api.coingecko.com/api/v3/search?query=${metadata.symbol}`)
     const searchData = await searchResponse.json()
-    
-    // Find the token in the results
     const token = searchData.coins.find((coin: any) => 
       coin.symbol.toLowerCase() === metadata.symbol.toLowerCase() &&
       coin.platforms.solana === mintAddress
     )
 
-    if (!token) {
-      throw new Error('Token not found on CoinGecko')
+    if (token) {
+      const priceResponse = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${token.id}&vs_currencies=usd&include_24hr_change=true`)
+      const priceData = await priceResponse.json()
+      if (priceData[token.id]?.usd > 0) {
+        return {
+          price: priceData[token.id].usd,
+          priceChange24h: priceData[token.id].usd_24h_change
+        }
+      }
     }
 
-    // Get the token's price
-    const priceResponse = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${token.id}&vs_currencies=usd&include_24hr_change=true`)
-    const priceData = await priceResponse.json()
-    
-    return {
-      price: priceData[token.id].usd,
-      priceChange24h: priceData[token.id].usd_24h_change
+    // Fallback: Try Jupiter Aggregator API for price
+    const jupiterResponse = await fetch(`https://price.jup.ag/v4/price?ids=${mintAddress}`)
+    if (jupiterResponse.ok) {
+      const jupiterData = await jupiterResponse.json()
+      const priceInfo = jupiterData.data?.[mintAddress]
+      if (priceInfo && priceInfo.price > 0) {
+        return {
+          price: priceInfo.price,
+          priceChange24h: 0 // Jupiter does not provide 24h change
+        }
+      }
     }
+
+    // If all fails, return 0
+    throw new Error('No price found from CoinGecko or Jupiter')
   } catch (error) {
-    console.error('Error fetching price from CoinGecko:', error)
-    // Return default values if price fetch fails
+    console.error('Error fetching price from CoinGecko or Jupiter:', error)
     return {
       price: 0,
       priceChange24h: 0

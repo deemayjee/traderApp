@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { supabaseAdmin } from '@/lib/supabase/server-admin'
 
 export const dynamic = 'force-dynamic' // This ensures the route is dynamic
 
@@ -16,10 +16,8 @@ export async function GET(request: Request) {
       )
     }
     
-    const supabase = createClient()
-    
     // Get user profile data
-    const { data: profile, error: profileError } = await supabase
+    const { data: profile, error: profileError } = await supabaseAdmin
       .from('user_profiles')
       .select('username, avatar_url, bio, wallet_address')
       .eq('wallet_address', address)
@@ -34,7 +32,7 @@ export async function GET(request: Request) {
     }
     
     // Get follow stats
-    const { data: stats, error: statsError } = await supabase
+    const { data: stats, error: statsError } = await supabaseAdmin
       .from('community_user_follow_stats')
       .select('followers_count, following_count, posts_count')
       .eq('wallet_address', address)
@@ -47,7 +45,7 @@ export async function GET(request: Request) {
     // Check if current user follows this profile
     let isFollowing = false
     if (currentUserAddress && currentUserAddress !== address) {
-      const { data: followData, error: followError } = await supabase
+      const { data: followData, error: followError } = await supabaseAdmin
         .from('community_follows')
         .select()
         .eq('follower_wallet', currentUserAddress)

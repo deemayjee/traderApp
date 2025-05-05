@@ -58,7 +58,7 @@ export default function BetaAccessVerification() {
               Pally Beta Access
             </h2>
             <p className="text-gray-300">
-              Enter your 4-digit access code to continue
+              Enter your 6-character access code to continue
             </p>
           </div>
 
@@ -67,15 +67,15 @@ export default function BetaAccessVerification() {
               <input
                 type="text"
                 value={code}
-                onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, ''))}
-                maxLength={4}
-                pattern="[0-9]{4}"
+                onChange={(e) => setCode(e.target.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase())}
+                maxLength={6}
+                pattern="[A-Z0-9]{6}"
                 required
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-200"
                 placeholder="Enter code"
               />
               <div className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400">
-                {code.length}/4
+                {code.length}/6
               </div>
             </div>
 

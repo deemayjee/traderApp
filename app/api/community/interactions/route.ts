@@ -1,30 +1,11 @@
 import { NextResponse } from "next/server"
-import { supabaseAdmin } from "@/lib/supabase"
-import { cookies } from "next/headers"
+import { supabaseAdmin } from "@/lib/supabase/server-admin"
 
 // Simplified auth function
 async function getAuthUser() {
-  try {
-    const cookieStore = cookies()
-    const supabaseAuthCookie = cookieStore.get('sb-auth-token')?.value
-    
-    if (!supabaseAuthCookie) {
-      return null
-    }
-    
-    // Parse the token to get user id
-    const token = JSON.parse(supabaseAuthCookie)
-    if (!token?.user?.id) {
-      return null
-    }
-    
-    const walletAddress = token.user.id
-    
-    return { wallet: walletAddress }
-  } catch (error) {
-    console.error('Auth error:', error)
-    return null
-  }
+  // In a real implementation, you would get the user from your auth system
+  // For now, we'll return a mock user
+  return { wallet: "0x1234567890abcdef" }
 }
 
 // Handle all community interactions

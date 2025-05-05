@@ -264,7 +264,10 @@ export default function PortfolioPage() {
 
         if (!mounted) return // Don't update state if component unmounted
 
-        const validHoldings = enrichedHoldings.filter((holding): holding is ProcessedTokenAccount => holding !== null)
+        // Filter out tokens with zero or negative value
+        const validHoldings = enrichedHoldings.filter(
+          (holding): holding is ProcessedTokenAccount => holding !== null && holding.value > 0
+        )
 
         // Calculate total value including SOL
         const totalValue = validHoldings.reduce((sum, asset) => sum + asset.value, 0) + solValue
@@ -348,7 +351,7 @@ export default function PortfolioPage() {
           <Button variant="outline" className="border-gray-200">
             <Download size={16} className="mr-2" /> Export
           </Button>
-          <Button className="bg-black text-white hover:bg-gray-800">
+          <Button className="">
             <Plus size={16} className="mr-2" /> Add Asset
           </Button>
         </div>
@@ -432,14 +435,14 @@ export default function PortfolioPage() {
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-xl">Assets</CardTitle>
               <Tabs defaultValue="all" value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="bg-gray-100 border border-gray-200">
-                  <TabsTrigger value="all" className="data-[state=active]:bg-white">
+                <TabsList className="bg-gray-100 dark:bg-muted border border-gray-200 dark:border-gray-800">
+                  <TabsTrigger value="all" className="data-[state=active]:bg-white dark:data-[state=active]:bg-card dark:data-[state=active]:text-white">
                     All
                   </TabsTrigger>
-                  <TabsTrigger value="tokens" className="data-[state=active]:bg-white">
+                  <TabsTrigger value="tokens" className="data-[state=active]:bg-white dark:data-[state=active]:bg-card dark:data-[state=active]:text-white">
                     Tokens
                   </TabsTrigger>
-                  <TabsTrigger value="nfts" className="data-[state=active]:bg-white">
+                  <TabsTrigger value="nfts" className="data-[state=active]:bg-white dark:data-[state=active]:bg-card dark:data-[state=active]:text-white">
                     NFTs
                   </TabsTrigger>
                 </TabsList>

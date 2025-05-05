@@ -1,11 +1,31 @@
-import { supabase } from '@/lib/supabase'
+const { createClient } = require('@supabase/supabase-js')
+require('dotenv').config({ path: '.env.local' })
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.error("Missing Supabase environment variables. Please check your .env.local file.")
+  process.exit(1)
+}
+
+const supabase = createClient(supabaseUrl, supabaseServiceKey)
+
+function generateAlphanumericCode(length: number = 6): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  let result = ''
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return result
+}
 
 async function generateBetaCodes(count: number = 50) {
   console.log(`Generating ${count} beta access codes...`)
   
   for (let i = 0; i < count; i++) {
-    // Generate a random 4-digit code
-    const code = Math.floor(1000 + Math.random() * 9000).toString()
+    // Generate a random 6-character alphanumeric code
+    const code = generateAlphanumericCode()
     
     try {
       // Insert the code into the database
@@ -29,5 +49,5 @@ async function generateBetaCodes(count: number = 50) {
   console.log('Code generation complete!')
 }
 
-// Generate 50 codes
+// Run the code generation
 generateBetaCodes().catch(console.error) 

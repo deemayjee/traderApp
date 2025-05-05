@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { supabaseAdmin } from '@/lib/supabase/server-admin'
 
 export const dynamic = 'force-dynamic' // This ensures the route is dynamic
 
@@ -9,10 +9,9 @@ export async function DELETE(
 ) {
   try {
     const { id } = params
-    const supabase = createClient()
 
     // Delete the comment
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from('community_comments')
       .delete()
       .eq('id', id)

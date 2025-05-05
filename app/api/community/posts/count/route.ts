@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { supabaseAdmin } from '@/lib/supabase/server-admin'
 
 export const dynamic = 'force-dynamic' // This ensures the route is dynamic
 
@@ -16,22 +16,35 @@ export async function GET(request: Request) {
       )
     }
     
-    const supabase = createClient()
-    
     // Try to find the wallet address if only userId is provided
     let userWalletAddress = walletAddress
     if (userId && !walletAddress) {
-      const { data: user } = await supabase
+      const { data: user, error: userError } = await supabaseAdmin
         .from('users')
         .select('wallet_address')
         .eq('id', userId)
         .single()
         
+      if (userError) {
+        console.error('Error fetching user:', userError)
+        return NextResponse.json(
+          { error: 'Failed to fetch user data' },
+          { status: 500 }
+        )
+      }
+      
       userWalletAddress = user?.wallet_address
     }
     
+    if (!userWalletAddress) {
+      return NextResponse.json(
+        { error: 'No valid wallet address found' },
+        { status: 400 }
+      )
+    }
+    
     // Query posts by wallet_address
-    const { data, error, count } = await supabase
+    const { data, error, count } = await supabaseAdmin
       .from('community_posts')
       .select('id', { count: 'exact' })
       .eq('wallet_address', userWalletAddress)

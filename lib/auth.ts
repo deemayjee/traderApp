@@ -1,5 +1,4 @@
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { supabaseAdmin } from '@/lib/supabase/server-admin'
 import { NextAuthOptions } from "next-auth"
 import { WalletAdapter } from "@/lib/wallet-adapter"
 
@@ -10,21 +9,9 @@ type User = {
   profile?: any;
 }
 
-export async function auth(cookieStore: ReturnType<typeof cookies>): Promise<User | null> {
+export async function auth(): Promise<User | null> {
   try {
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value
-          },
-        },
-      }
-    )
-    
-    const { data: { session } } = await supabase.auth.getSession()
+    const { data: { session } } = await supabaseAdmin.auth.getSession()
     
     if (!session?.user) {
       return null
@@ -34,7 +21,7 @@ export async function auth(cookieStore: ReturnType<typeof cookies>): Promise<Use
     const walletAddress = session.user.id
     
     // Get user profile info
-    const { data: userData, error } = await supabase
+    const { data: userData, error } = await supabaseAdmin
       .from('users')
       .select(`
         wallet_address,

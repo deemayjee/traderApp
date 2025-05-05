@@ -19,6 +19,24 @@ const PallyIcon = () => (
   </svg>
 )
 
+// Utility to format large numbers (e.g., 1.5B, 3.2M)
+function formatLargeNumber(num: number | string | undefined | null) {
+  if (num === null || num === undefined || num === "") return '-';
+  // If it's a string and already contains a suffix, return as is
+  if (typeof num === 'string') {
+    const trimmed = num.trim();
+    if (/^[\d,.]+[KMBT]$/.test(trimmed)) return trimmed; // Already formatted
+    if (!isNaN(Number(trimmed))) num = Number(trimmed);
+    else return trimmed;
+  }
+  if (typeof num !== 'number' || isNaN(num)) return '-';
+  if (Math.abs(num) >= 1.0e+12) return (num / 1.0e+12).toFixed(2) + "T";
+  if (Math.abs(num) >= 1.0e+9) return (num / 1.0e+9).toFixed(2) + "B";
+  if (Math.abs(num) >= 1.0e+6) return (num / 1.0e+6).toFixed(2) + "M";
+  if (Math.abs(num) >= 1.0e+3) return (num / 1.0e+3).toFixed(2) + "K";
+  return num.toString();
+}
+
 export function MarketOverview({ marketData, className = "", onTokenSelect }: MarketOverviewProps) {
   if (!marketData || marketData.length === 0) {
     return (
@@ -45,7 +63,6 @@ export function MarketOverview({ marketData, className = "", onTokenSelect }: Ma
               <TableHead className="text-muted-foreground">Asset</TableHead>
               <TableHead className="text-muted-foreground">Price</TableHead>
               <TableHead className="text-muted-foreground">24h Change</TableHead>
-              <TableHead className="text-muted-foreground hidden md:table-cell">Volume</TableHead>
               <TableHead className="text-muted-foreground">AI Sentiment</TableHead>
             </TableRow>
           </TableHeader>
@@ -69,7 +86,6 @@ export function MarketOverview({ marketData, className = "", onTokenSelect }: Ma
                     {asset.change}
                   </div>
                 </TableCell>
-                <TableCell className="hidden md:table-cell">{asset.volume}</TableCell>
                 <TableCell>
                   <Badge
                     variant="outline"

@@ -22,6 +22,7 @@ export interface Comment {
   }
   likes: string[]
   createdAt: string
+  userLiked?: boolean
 }
 
 interface PostCommentsProps {
