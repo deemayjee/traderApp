@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Slider } from "@/components/ui/slider"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Settings, Save, HelpCircle, Loader2 } from "lucide-react"
+import { Settings, Save, HelpCircle, Loader2, CheckCircle2 } from "lucide-react"
 import { useState, useEffect } from "react"
 import type { AIAgent, AIAgentType } from "./create-agent-dialog"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
@@ -30,6 +30,7 @@ export function AIAgentConfiguration({ agent }: AIAgentConfigurationProps) {
   const [indicators, setIndicators] = useState(agent.indicators)
   const [hasChanges, setHasChanges] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [isSaved, setIsSaved] = useState(false)
   const { addNotification } = useNotifications()
   const { user } = useWalletAuth()
   const walletAddress = user?.address
@@ -42,6 +43,7 @@ export function AIAgentConfiguration({ agent }: AIAgentConfigurationProps) {
     setFocusAssets(agent.focusAssets)
     setIndicators(agent.indicators)
     setHasChanges(false)
+    setIsSaved(false)
   }, [agent])
 
   const handleSave = async () => {
@@ -67,12 +69,17 @@ export function AIAgentConfiguration({ agent }: AIAgentConfigurationProps) {
       }
       await agentSupabase.saveAgent(updatedAgent, walletAddress)
       setHasChanges(false)
+      setIsSaved(true)
       addNotification({
         title: "Success",
         message: "Agent configuration updated successfully",
         type: "success",
         priority: "medium",
       })
+      // Reset saved state after 2 seconds
+      setTimeout(() => {
+        setIsSaved(false)
+      }, 2000)
     } catch (error) {
       console.error("Error saving configuration:", error)
       addNotification({
@@ -106,6 +113,11 @@ export function AIAgentConfiguration({ agent }: AIAgentConfigurationProps) {
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Saving...
+              </>
+            ) : isSaved ? (
+              <>
+                <CheckCircle2 className="mr-2 h-4 w-4" />
+                Changes saved
               </>
             ) : (
               "Save Changes"

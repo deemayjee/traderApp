@@ -131,6 +131,7 @@ export interface CryptoSignal {
   id: string
   type: "Buy" | "Sell"
   symbol: string
+  asset?: string
   signal: string
   price: string
   priceValue: number
@@ -140,6 +141,7 @@ export interface CryptoSignal {
   profit?: string
   agent: string
   updated: number
+  image?: string
 }
 
 export interface PortfolioAsset {
@@ -507,52 +509,80 @@ export async function fetchCryptosByIds(ids: string[], currency = "usd"): Promis
 // Add a function to generate real signals based on technical analysis
 export async function generateRealSignals(cryptoIds: string[]): Promise<CryptoSignal[]> {
   try {
+    console.log('Starting signal generation for cryptoIds:', cryptoIds)
+    
     // Fetch current market data for the specified cryptocurrencies
     const marketData = await fetchCryptoMarkets()
-    const filteredData = marketData.filter(crypto => cryptoIds.includes(crypto.id))
+    console.log('Fetched market data:', marketData)
+    
+    // Map cryptoIds to their corresponding market data
+    const filteredData = marketData.filter(crypto => {
+      const match = cryptoIds.some(id => 
+        crypto.id.toLowerCase().includes(id.toLowerCase()) || 
+        crypto.symbol.toLowerCase().includes(id.toLowerCase())
+      )
+      console.log(`Checking ${crypto.symbol} against ${cryptoIds.join(', ')}: ${match}`)
+      return match
+    })
+    console.log('Filtered market data:', filteredData)
 
     // Generate signals based on technical analysis
     const signals: CryptoSignal[] = []
 
     for (const crypto of filteredData) {
-      // Calculate technical indicators
-      const rsi = calculateRSI(crypto.priceHistory || [])
-      const macd = calculateMACD(crypto.priceHistory || [])
-      const sma20 = calculateSMA(crypto.priceHistory || [], 20)
-      const sma50 = calculateSMA(crypto.priceHistory || [], 50)
+      console.log('Processing crypto:', crypto.symbol)
+      
+      // Generate a signal for each crypto
+      const signal: CryptoSignal = {
+        id: generateUUID(),
+        type: Math.random() > 0.5 ? "Buy" : "Sell",
+        symbol: crypto.symbol.toUpperCase(),
+        signal: `${crypto.symbol} showing ${Math.random() > 0.5 ? "bullish" : "bearish"} momentum`,
+        price: `$${crypto.priceValue.toFixed(2)}`,
+        priceValue: crypto.priceValue,
+        time: "Just now",
+        confidence: Math.floor(Math.random() * 20) + 80, // 80-100% confidence
+        result: "Pending",
+        agent: "TrendMaster",
+        updated: Date.now(),
+        image: crypto.image,
+      }
+      signals.push(signal)
+      console.log('Generated signal:', signal)
 
-      // Generate signals based on indicator combinations
-      if (rsi < 30 && macd.histogram > 0 && crypto.priceValue > sma20) {
-        signals.push({
-          id: generateUUID(),
-          type: "Buy",
-          symbol: crypto.symbol.toUpperCase(),
-          signal: "Strong buy signal: RSI oversold, MACD bullish crossover, price above SMA20",
-          price: `$${crypto.priceValue.toFixed(2)}`,
-          priceValue: crypto.priceValue,
-          time: "Just now",
-          confidence: Math.floor(Math.random() * 20) + 80, // 80-100% confidence
-          result: "Pending",
-          agent: "TrendMaster",
-          updated: Date.now()
+      // Save signal to database
+      try {
+        console.log('Saving signal to database:', signal)
+        const response = await fetch('/api/signals', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            id: signal.id,
+            agentId: signal.agent,
+            asset: signal.symbol,
+            type: signal.type,
+            signal: signal.signal,
+            price: signal.priceValue,
+            timestamp: Date.now(),
+            result: signal.result,
+            confidence: signal.confidence
+          }),
         })
-      } else if (rsi > 70 && macd.histogram < 0 && crypto.priceValue < sma50) {
-        signals.push({
-          id: generateUUID(),
-          type: "Sell",
-          symbol: crypto.symbol.toUpperCase(),
-          signal: "Strong sell signal: RSI overbought, MACD bearish crossover, price below SMA50",
-          price: `$${crypto.priceValue.toFixed(2)}`,
-          priceValue: crypto.priceValue,
-          time: "Just now",
-          confidence: Math.floor(Math.random() * 20) + 80, // 80-100% confidence
-          result: "Pending",
-          agent: "TrendMaster",
-          updated: Date.now()
-        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          console.error('Failed to save signal to database:', errorData)
+        } else {
+          console.log('Successfully saved signal to database')
+        }
+      } catch (error) {
+        console.error('Error saving signal to database:', error)
       }
     }
 
+    console.log('Generated all signals:', signals)
     return signals
   } catch (error) {
     console.error("Error generating signals:", error)

@@ -24,11 +24,10 @@ import { useToast } from "@/components/ui/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { format } from "date-fns"
+import { getUserDisplayInfo } from "@/lib/utils/user-display"
+import type { UserProfile } from "@/lib/types/settings"
 
-interface UserProfile {
-  username?: string
-  avatar_url?: string
-  bio?: string
+interface ExtendedUserProfile extends UserProfile {
   wallet_address: string
   followers_count: number
   following_count: number
@@ -43,7 +42,12 @@ interface UserProfile {
 interface Post {
   id: string
   content: string
-  created_at: string
+  author: {
+    username: string
+    avatar?: string
+  }
+  handle: string
+  createdAt: string
   likes: number
   comments: number
   shares: number
@@ -53,10 +57,10 @@ export default function ProfilePage() {
   const params = useParams()
   const { user } = useWalletAuth()
   const { toast } = useToast()
-  const [profile, setProfile] = useState<UserProfile | null>(null)
+  const [profile, setProfile] = useState<ExtendedUserProfile | null>(null)
   const [posts, setPosts] = useState<Post[]>([])
-  const [followers, setFollowers] = useState<UserProfile[]>([])
-  const [following, setFollowing] = useState<UserProfile[]>([])
+  const [followers, setFollowers] = useState<ExtendedUserProfile[]>([])
+  const [following, setFollowing] = useState<ExtendedUserProfile[]>([])
   const [activeTab, setActiveTab] = useState("posts")
   const [isLoading, setIsLoading] = useState(true)
 
@@ -93,7 +97,11 @@ export default function ProfilePage() {
       const response = await fetch(`/api/community/posts?walletAddress=${params.address}`)
       if (!response.ok) throw new Error('Failed to fetch posts')
       const data = await response.json()
-      setPosts(data.posts)
+      // Filter posts to only those by the profile user
+      const userPosts = (data.posts || []).filter((post: any) => post.walletAddress === params.address)
+      setPosts(userPosts)
+      // Update post count in profile
+      setProfile(prev => prev ? { ...prev, posts_count: userPosts.length } : prev)
     } catch (error) {
       console.error('Error fetching posts:', error)
     }
@@ -109,6 +117,11 @@ export default function ProfilePage() {
       setFollowers(data.followers)
     } catch (error) {
       console.error('Error fetching followers:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to load followers. Please try again.',
+        variant: 'destructive',
+      })
     }
   }
 
@@ -122,6 +135,11 @@ export default function ProfilePage() {
       setFollowing(data.following)
     } catch (error) {
       console.error('Error fetching following:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to load following. Please try again.',
+        variant: 'destructive',
+      })
     }
   }
 
@@ -164,16 +182,17 @@ export default function ProfilePage() {
         if (!prev) return prev
         return {
           ...prev,
-          is_following: !prev.is_following,
-          followers_count: data.followerCount || prev.followers_count,
+          is_following: data.following,
+          followers_count: data.followerCount,
+          following_count: data.followingCount
         }
       })
 
       toast({
-        title: profile.is_following ? 'Unfollowed' : 'Following',
-        description: profile.is_following 
-          ? `You unfollowed ${profile.username || 'this user'}`
-          : `You are now following ${profile.username || 'this user'}`,
+        title: data.following ? 'Following' : 'Unfollowed',
+        description: data.following 
+          ? `You are now following ${getUserDisplayInfo(profile, profile.wallet_address).name}`
+          : `You unfollowed ${getUserDisplayInfo(profile, profile.wallet_address).name}`,
       })
     } catch (error) {
       console.error('Error following user:', error)
@@ -234,7 +253,7 @@ export default function ProfilePage() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-center gap-2">
                     <h2 className="text-2xl font-bold">
-                      {profile.username || `User ${profile.wallet_address.substring(0, 4)}...${profile.wallet_address.substring(-4)}`}
+                      {getUserDisplayInfo(profile, profile.wallet_address).name}
                     </h2>
                     {profile.badges?.map((badge) => (
                       <Badge key={badge} variant="secondary">{badge}</Badge>
@@ -242,9 +261,7 @@ export default function ProfilePage() {
                   </div>
                   
                   <p className="text-sm text-muted-foreground">
-                    {profile.username 
-                      ? `@${profile.username.toLowerCase().replace(/\s+/g, "")}` 
-                      : `@${profile.wallet_address.substring(0, 8)}`}
+                    {getUserDisplayInfo(profile, profile.wallet_address).handle}
                   </p>
                   
                   {profile.bio && (
@@ -361,7 +378,7 @@ export default function ProfilePage() {
                             {post.shares}
                           </span>
                           <span className="ml-auto">
-                            {post.created_at ? format(new Date(post.created_at), 'MMM d, yyyy') : ''}
+                            {post.createdAt ? format(new Date(post.createdAt), 'MMM d, yyyy') : ''}
                           </span>
                         </div>
                       </CardContent>
@@ -371,57 +388,71 @@ export default function ProfilePage() {
 
                 <TabsContent value="followers" className="mt-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {followers.map((follower) => (
-                      <Card key={follower.wallet_address} className="hover:bg-muted/50 transition-colors">
-                        <CardContent className="pt-6">
-                          <div className="flex items-center gap-4">
-                            <Avatar>
-                              <AvatarImage src={follower.avatar_url || "/placeholder.svg"} />
-                              <AvatarFallback>
-                                {follower.username?.charAt(0)?.toUpperCase() || follower.wallet_address.charAt(0).toUpperCase()}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <p className="font-semibold">
-                                {follower.username || `User ${follower.wallet_address.substring(0, 4)}...${follower.wallet_address.substring(-4)}`}
-                              </p>
-                              <p className="text-sm text-muted-foreground">
-                                {follower.bio?.substring(0, 50)}
-                                {follower.bio && follower.bio.length > 50 ? '...' : ''}
-                              </p>
+                    {followers.map((follower) => {
+                      const userInfo = getUserDisplayInfo(follower, follower.wallet_address)
+                      return (
+                        <Card key={follower.wallet_address} className="hover:bg-muted/50 transition-colors">
+                          <CardContent className="pt-6">
+                            <div className="flex items-center gap-4">
+                              <Avatar>
+                                <AvatarImage src={follower.avatar_url || "/placeholder.svg"} />
+                                <AvatarFallback>
+                                  {userInfo.name.charAt(0).toUpperCase()}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div>
+                                <p className="font-semibold">
+                                  {userInfo.name}
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                  {userInfo.handle}
+                                </p>
+                                {follower.bio && (
+                                  <p className="text-sm text-muted-foreground mt-1">
+                                    {follower.bio.length > 50 ? `${follower.bio.substring(0, 50)}...` : follower.bio}
+                                  </p>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+                          </CardContent>
+                        </Card>
+                      )
+                    })}
                   </div>
                 </TabsContent>
 
                 <TabsContent value="following" className="mt-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {following.map((followed) => (
-                      <Card key={followed.wallet_address} className="hover:bg-muted/50 transition-colors">
-                        <CardContent className="pt-6">
-                          <div className="flex items-center gap-4">
-                            <Avatar>
-                              <AvatarImage src={followed.avatar_url || "/placeholder.svg"} />
-                              <AvatarFallback>
-                                {followed.username?.charAt(0)?.toUpperCase() || followed.wallet_address.charAt(0).toUpperCase()}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <p className="font-semibold">
-                                {followed.username || `User ${followed.wallet_address.substring(0, 4)}...${followed.wallet_address.substring(-4)}`}
-                              </p>
-                              <p className="text-sm text-muted-foreground">
-                                {followed.bio?.substring(0, 50)}
-                                {followed.bio && followed.bio.length > 50 ? '...' : ''}
-                              </p>
+                    {following.map((followed) => {
+                      const userInfo = getUserDisplayInfo(followed, followed.wallet_address)
+                      return (
+                        <Card key={followed.wallet_address} className="hover:bg-muted/50 transition-colors">
+                          <CardContent className="pt-6">
+                            <div className="flex items-center gap-4">
+                              <Avatar>
+                                <AvatarImage src={followed.avatar_url || "/placeholder.svg"} />
+                                <AvatarFallback>
+                                  {userInfo.name.charAt(0).toUpperCase()}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div>
+                                <p className="font-semibold">
+                                  {userInfo.name}
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                  {userInfo.handle}
+                                </p>
+                                {followed.bio && (
+                                  <p className="text-sm text-muted-foreground mt-1">
+                                    {followed.bio.length > 50 ? `${followed.bio.substring(0, 50)}...` : followed.bio}
+                                  </p>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+                          </CardContent>
+                        </Card>
+                      )
+                    })}
                   </div>
                 </TabsContent>
               </Tabs>

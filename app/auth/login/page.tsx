@@ -68,7 +68,7 @@ export default function Login() {
 
               <div className="flex justify-center">
                 <Button
-                  className="bg-black hover:bg-gray-800 text-white font-bold py-2 px-6 rounded-full transition-all flex items-center gap-2"
+                  className="font-bold py-2 px-6 rounded-full transition-all flex items-center gap-2"
                   onClick={handleLogin}
                   disabled={isLoading}
                 >

@@ -1,4 +1,3 @@
-import { supabase, setCurrentWalletAddress, getCurrentWalletAddress } from '@/lib/supabase'
 import type { AIAgent } from '@/components/ai-agents/create-agent-dialog'
 
 export interface Signal {
@@ -9,9 +8,10 @@ export interface Signal {
   signal: string
   price: number
   timestamp: number
-  result?: 'Success' | 'Failure' | 'Pending'
+  result: 'Success' | 'Failure' | 'Pending'
   profit?: number
   confidence: number
+  time?: string
 }
 
 class AgentSupabase {
@@ -19,46 +19,18 @@ class AgentSupabase {
     if (!wallet_address) throw new Error('Wallet address is required to save an agent')
 
     try {
-      // Ensure we have a valid session
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-      if (sessionError) throw sessionError
-      if (!session) {
-        throw new Error('No active session. Please authenticate first.')
+      const response = await fetch('/api/agents', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ agent, wallet_address }),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to save agent')
       }
-
-      // Set the wallet address for RLS policies
-      await setCurrentWalletAddress(wallet_address)
-
-      // Verify the wallet address was set correctly
-      const currentWallet = await getCurrentWalletAddress()
-      if (currentWallet !== wallet_address) {
-        throw new Error('Failed to set wallet address for RLS policies')
-      }
-
-      const { error } = await supabase
-        .from('ai_agents')
-        .upsert({
-          id: agent.id || undefined,
-          name: agent.name,
-          type: agent.type,
-          description: agent.description,
-          is_active: agent.active,
-          wallet_address: wallet_address,
-          configuration: {
-            custom: agent.custom,
-            riskTolerance: agent.riskTolerance,
-            focusAssets: agent.focusAssets,
-            indicators: agent.indicators,
-          },
-          performance_metrics: {
-            accuracy: agent.accuracy,
-            signals: agent.signals,
-            lastSignal: agent.lastSignal,
-          },
-        }, {
-          onConflict: 'id'
-        })
-      if (error) throw error
     } catch (error) {
       console.error('Error in saveAgent:', error)
       throw error
@@ -66,83 +38,122 @@ class AgentSupabase {
   }
 
   async getAgent(id: string): Promise<AIAgent | undefined> {
-    const { data, error } = await supabase
-      .from('ai_agents')
-      .select('*')
-      .eq('id', id)
-      .single()
-    if (error) return undefined
-    return this.mapAgent(data)
+    try {
+      const response = await fetch(`/api/agents?id=${id}`)
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to fetch agent')
+      }
+      const data = await response.json()
+      return data.agents?.[0] ? this.mapAgent(data.agents[0]) : undefined
+    } catch (error) {
+      console.error('Error in getAgent:', error)
+      return undefined
+    }
   }
 
   async getAllAgents(wallet_address?: string): Promise<AIAgent[]> {
-    let query = supabase
-      .from('ai_agents')
-      .select('*')
-    if (wallet_address) {
-      query = query.eq('wallet_address', wallet_address)
+    try {
+      const url = wallet_address 
+        ? `/api/agents?wallet_address=${wallet_address}`
+        : '/api/agents'
+      const response = await fetch(url)
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to fetch agents')
+      }
+      const data = await response.json()
+      return (data.agents || []).map(this.mapAgent)
+    } catch (error) {
+      console.error('Error in getAllAgents:', error)
+      return []
     }
-    const { data, error } = await query
-    if (error) return []
-    return (data || []).map(this.mapAgent)
   }
 
   async getActiveAgents(wallet_address?: string): Promise<AIAgent[]> {
-    let query = supabase
-      .from('ai_agents')
-      .select('*')
-      .eq('is_active', true)
-    if (wallet_address) {
-      query = query.eq('wallet_address', wallet_address)
+    try {
+      const url = wallet_address 
+        ? `/api/agents?wallet_address=${wallet_address}&active=true`
+        : '/api/agents?active=true'
+      const response = await fetch(url)
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to fetch active agents')
+      }
+      const data = await response.json()
+      return (data.agents || []).map(this.mapAgent)
+    } catch (error) {
+      console.error('Error in getActiveAgents:', error)
+      return []
     }
-    const { data, error } = await query
-    if (error) return []
-    return (data || []).map(this.mapAgent)
   }
 
   async saveSignal(signal: Signal): Promise<void> {
-    const { error } = await supabase
-      .from('ai_signals')
-      .upsert({ ...signal })
-    if (error) throw error
+    try {
+      const response = await fetch('/api/signals', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(signal),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to save signal')
+      }
+    } catch (error) {
+      console.error('Error in saveSignal:', error)
+      throw error
+    }
   }
 
   async deleteAgent(agentId: string, wallet_address?: string): Promise<void> {
     if (!wallet_address) throw new Error('Wallet address is required to delete an agent')
 
-    // Set the wallet address for RLS policies
-    await setCurrentWalletAddress(wallet_address)
+    try {
+      const response = await fetch(`/api/agents?id=${agentId}&wallet_address=${wallet_address}`, {
+        method: 'DELETE',
+      })
 
-    const { error } = await supabase
-      .from('ai_agents')
-      .delete()
-      .eq('id', agentId)
-      .eq('wallet_address', wallet_address)
-
-    if (error) {
-      console.error('Error deleting agent:', error)
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to delete agent')
+      }
+    } catch (error) {
+      console.error('Error in deleteAgent:', error)
       throw error
     }
   }
 
   async getSignalsByAgent(agentId: string): Promise<Signal[]> {
-    const { data, error } = await supabase
-      .from('ai_signals')
-      .select('*')
-      .eq('agentId', agentId)
-      .order('timestamp', { ascending: false })
-    if (error) return []
-    return data || []
+    try {
+      const response = await fetch(`/api/signals?agentId=${agentId}`)
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to fetch signals')
+      }
+      const data = await response.json()
+      return data.signals || []
+    } catch (error) {
+      console.error('Error in getSignalsByAgent:', error)
+      return []
+    }
   }
 
   async getRecentSignals(limit: number = 10): Promise<Signal[]> {
-    const { data, error } = await supabase
-      .from('ai_signals')
-      .select('*')
-      .order('timestamp', { ascending: false })
-      .limit(limit)
-    if (error) return []
-    return data || []
+    try {
+      const response = await fetch(`/api/signals?limit=${limit}`)
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to fetch recent signals')
+      }
+      const data = await response.json()
+      return data.signals || []
+    } catch (error) {
+      console.error('Error in getRecentSignals:', error)
+      return []
+    }
   }
 
   // Helper to map DB row to AIAgent

@@ -7,6 +7,8 @@ import { Label } from "@/components/ui/label"
 import { useState } from "react"
 import { toast } from "sonner"
 import { usePrivy } from "@privy-io/react-auth"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { AlertCircle, Copy, CheckCircle2 } from "lucide-react"
 
 interface DepositVerificationProps {
   onDepositVerified: () => void
@@ -15,9 +17,10 @@ interface DepositVerificationProps {
 
 export function DepositVerification({ onDepositVerified, onWalletAdded }: DepositVerificationProps) {
   const [isDeposited, setIsDeposited] = useState(false)
-  const [walletAddress, setWalletAddress] = useState("")
-  const [walletName, setWalletName] = useState("")
+  const [traderWalletAddress, setTraderWalletAddress] = useState("")
+  const [traderName, setTraderName] = useState("")
   const [isVerifying, setIsVerifying] = useState(false)
+  const [step, setStep] = useState<"balance" | "trader">("balance")
   const { user, authenticated, getAccessToken } = usePrivy()
 
   const handleVerifyDeposit = async () => {
@@ -46,7 +49,7 @@ export function DepositVerification({ onDepositVerified, onWalletAdded }: Deposi
       }
 
       setIsDeposited(true)
-      onDepositVerified()
+      setStep("trader")
       toast.success("Wallet balance verified successfully!")
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to verify wallet balance")
@@ -55,13 +58,26 @@ export function DepositVerification({ onDepositVerified, onWalletAdded }: Deposi
     }
   }
 
-  const handleAddWallet = () => {
-    if (!walletAddress || !walletName) {
+  const handleAddTrader = () => {
+    if (!traderWalletAddress || !traderName) {
       toast.error("Please fill in all fields")
       return
     }
-    onWalletAdded(walletAddress, walletName)
+
+    // Validate Solana wallet address format
+    if (!isValidSolanaAddress(traderWalletAddress)) {
+      toast.error("Invalid Solana wallet address")
+      return
+    }
+
+    onWalletAdded(traderWalletAddress, traderName)
+    onDepositVerified()
     toast.success("Trader added successfully!")
+  }
+
+  const isValidSolanaAddress = (address: string) => {
+    // Basic Solana address validation (base58, 32-44 characters)
+    return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address)
   }
 
   return (
@@ -70,7 +86,7 @@ export function DepositVerification({ onDepositVerified, onWalletAdded }: Deposi
         <CardTitle className="text-xl">Start Copy Trading</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
-        {!isDeposited ? (
+        {step === "balance" ? (
           <div className="space-y-4">
             <div className="bg-muted/50 p-4 rounded-lg">
               <h3 className="font-medium mb-2">Step 1: Verify Wallet Balance</h3>
@@ -95,7 +111,7 @@ export function DepositVerification({ onDepositVerified, onWalletAdded }: Deposi
                       }
                     }}
                   >
-                    Copy
+                    <Copy className="h-4 w-4" />
                   </Button>
                 </div>
               </div>
@@ -111,26 +127,27 @@ export function DepositVerification({ onDepositVerified, onWalletAdded }: Deposi
         ) : (
           <div className="space-y-4">
             <div className="bg-muted/50 p-4 rounded-lg">
-              <h3 className="font-medium mb-2">Step 2: Add Trader Wallet</h3>
+              <h3 className="font-medium mb-2">Step 2: Add Trader</h3>
               <p className="text-sm text-muted-foreground">
-                Enter the wallet address of the trader you want to copy and give it a custom name.
+                Enter the Solana wallet address of the trader you want to copy and give them a custom name.
               </p>
               <div className="mt-4 space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="walletAddress">Trader Wallet Address</Label>
+                  <Label htmlFor="traderWallet">Trader's Solana Wallet Address</Label>
                   <Input
-                    id="walletAddress"
-                    value={walletAddress}
-                    onChange={(e) => setWalletAddress(e.target.value)}
-                    placeholder="Enter wallet address"
+                    id="traderWallet"
+                    value={traderWalletAddress}
+                    onChange={(e) => setTraderWalletAddress(e.target.value)}
+                    placeholder="Enter Solana wallet address"
+                    className="font-mono"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="walletName">Custom Name</Label>
+                  <Label htmlFor="traderName">Custom Name</Label>
                   <Input
-                    id="walletName"
-                    value={walletName}
-                    onChange={(e) => setWalletName(e.target.value)}
+                    id="traderName"
+                    value={traderName}
+                    onChange={(e) => setTraderName(e.target.value)}
                     placeholder="e.g., Top Trader #1"
                   />
                 </div>
@@ -138,8 +155,8 @@ export function DepositVerification({ onDepositVerified, onWalletAdded }: Deposi
             </div>
             <Button
               className="w-full"
-              onClick={handleAddWallet}
-              disabled={!walletAddress || !walletName}
+              onClick={handleAddTrader}
+              disabled={!traderWalletAddress || !traderName}
             >
               Add Trader
             </Button>

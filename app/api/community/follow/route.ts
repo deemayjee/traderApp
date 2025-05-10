@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { SettingsService } from '@/lib/services/settings-service'
 
 // Toggle follow for a user
 export async function POST(req: Request) {
@@ -20,9 +20,11 @@ export async function POST(req: Request) {
         { status: 400 }
       )
     }
+
+    const settingsService = new SettingsService(true) // Use server-side Supabase client
     
     // Check if already following
-    const { data: existingFollow, error: checkError } = await supabase
+    const { data: existingFollow, error: checkError } = await settingsService.getSupabase()
       .from('community_follows')
       .select()
       .eq('follower_wallet', followerAddress)
@@ -41,7 +43,7 @@ export async function POST(req: Request) {
     
     if (existingFollow) {
       // Unfollow: delete the existing follow
-      const { error: unfollowError } = await supabase
+      const { error: unfollowError } = await settingsService.getSupabase()
         .from('community_follows')
         .delete()
         .eq('follower_wallet', followerAddress)
@@ -58,7 +60,7 @@ export async function POST(req: Request) {
       result = { following: false }
     } else {
       // Follow: insert a new follow
-      const { error: followError } = await supabase
+      const { error: followError } = await settingsService.getSupabase()
         .from('community_follows')
         .insert({
           follower_wallet: followerAddress,
@@ -77,21 +79,36 @@ export async function POST(req: Request) {
       result = { following: true }
     }
     
-    // Get updated stats from the stats table
-    const { data: stats, error: statsError } = await supabase
-      .from('community_user_follow_stats')
-      .select('followers_count, following_count')
-      .eq('wallet_address', followId)
-      .single()
-      
-    if (statsError) {
-      console.error('Error getting follow stats:', statsError)
+    // Get updated stats for both users
+    const [followerStats, followingStats] = await Promise.all([
+      // Get stats for the user being followed
+      settingsService.getSupabase()
+        .from('community_user_follow_stats')
+        .select('followers_count, following_count')
+        .eq('wallet_address', followId)
+        .single(),
+      // Get stats for the follower
+      settingsService.getSupabase()
+        .from('community_user_follow_stats')
+        .select('followers_count, following_count')
+        .eq('wallet_address', followerAddress)
+        .single()
+    ])
+    
+    if (followerStats.error) {
+      console.error('Error getting follower stats:', followerStats.error)
+    }
+    
+    if (followingStats.error) {
+      console.error('Error getting following stats:', followingStats.error)
     }
     
     return NextResponse.json({
       ...result,
-      followerCount: stats?.followers_count || 0,
-      followingCount: stats?.following_count || 0
+      followerCount: followerStats.data?.followers_count || 0,
+      followingCount: followingStats.data?.following_count || 0,
+      userFollowerCount: followingStats.data?.followers_count || 0,
+      userFollowingCount: followingStats.data?.following_count || 0
     })
   } catch (error) {
     console.error('Error in POST /api/community/follow:', error)
@@ -115,16 +132,18 @@ export async function GET(req: Request) {
         { status: 400 }
       )
     }
+
+    const settingsService = new SettingsService(true) // Use server-side Supabase client
     
     // Get stats from the stats table
-    const { data: stats, error: statsError } = await supabase
+    const { data: stats, error: statsError } = await settingsService.getSupabase()
       .from('community_user_follow_stats')
       .select('followers_count, following_count')
       .eq('wallet_address', walletAddress)
       .single()
       
     if (statsError) {
-      console.error('Error getting follow stats:', statsError)
+      console.error('Error getting stats:', statsError)
       return NextResponse.json(
         { error: 'Error fetching follow statistics' },
         { status: 500 }
@@ -134,7 +153,7 @@ export async function GET(req: Request) {
     // Check if current user follows this user
     let isFollowing = false
     if (currentUserAddress && currentUserAddress !== walletAddress) {
-      const { data: followData, error: followError } = await supabase
+      const { data: followData, error: followError } = await settingsService.getSupabase()
         .from('community_follows')
         .select()
         .eq('follower_wallet', currentUserAddress)

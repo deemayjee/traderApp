@@ -45,7 +45,7 @@ export default function BetaAccessVerification() {
   if (!isMounted) return null
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-900 to-purple-900 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 to-black flex items-center justify-center p-4">
       <div className="w-full max-w-md opacity-0 translate-y-5 animate-fade-in-up">
         <div className="bg-white/10 backdrop-blur-lg rounded-2xl shadow-xl p-8 border border-white/20">
           <div className="text-center mb-8">

@@ -155,6 +155,8 @@ export default function CommunityPage() {
   // Load posts
   const fetchPosts = async () => {
     setIsLoading(true)
+    if (!user?.address) return
+    
     try {
       const response = await fetch(`/api/community/posts?tab=${activeTab}&walletAddress=${user?.address || ""}`)
       if (!response.ok) {
@@ -189,10 +191,29 @@ export default function CommunityPage() {
         commentsList: []
       })) || []
       
-      setPosts(processedPosts)
+      // Get follow status for each post's author
+      const postsWithFollowStatus = await Promise.all(
+        processedPosts.map(async (post: any) => {
+          if (!post.walletAddress || post.walletAddress === user.address) {
+            return { ...post, following: false }
+          }
+          
+          const followResponse = await fetch(
+            `/api/community/follow?walletAddress=${post.walletAddress}&currentUserAddress=${user.address}`
+          )
+          if (!followResponse.ok) {
+            return { ...post, following: false }
+          }
+          
+          const followData = await followResponse.json()
+          return { ...post, following: followData.isFollowing }
+        })
+      )
+      
+      setPosts(postsWithFollowStatus)
       
       // Load comments for all posts with comments
-      processedPosts.forEach(async (post: ExtendedPost) => {
+      postsWithFollowStatus.forEach(async (post: ExtendedPost) => {
         if (post.comments > 0) {
           await loadCommentsForPost(post.id)
         }
@@ -477,19 +498,28 @@ export default function CommunityPage() {
       
       const data = await response.json()
       
-      // Update user stats
+      // Update posts with new follow status
+      setPosts((prevPosts) =>
+        prevPosts.map((p) =>
+          p.walletAddress === post.walletAddress
+            ? { ...p, following: data.following }
+            : p
+        )
+      )
+      
+      // Update user stats with both follower and following counts
       setUserStats(prev => ({
         ...prev,
-        followingCount: data.followingCount || prev.followingCount,
-        followersCount: data.followerCount || prev.followersCount
+        followingCount: data.userFollowingCount || prev.followingCount,
+        followersCount: data.userFollowerCount || prev.followersCount
       }))
       
       // Notification
       addNotification({
-        title: post.following ? "Unfollowed" : "Now Following",
-        message: post.following 
-          ? `You unfollowed ${typeof post.author === 'string' ? post.author : post.author?.username || 'Anonymous'}`
-          : `You are now following ${typeof post.author === 'string' ? post.author : post.author?.username || 'Anonymous'}`,
+        title: data.following ? "Now Following" : "Unfollowed",
+        message: data.following 
+          ? `You are now following ${typeof post.author === 'string' ? post.author : post.author?.username || 'Anonymous'}`
+          : `You unfollowed ${typeof post.author === 'string' ? post.author : post.author?.username || 'Anonymous'}`,
         type: "system",
       })
     } catch (error) {

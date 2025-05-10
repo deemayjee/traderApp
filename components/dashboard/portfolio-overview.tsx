@@ -2,11 +2,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ArrowUp, ArrowDown } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
-import type { PortfolioAsset } from "@/lib/api/crypto-api"
+import type { ProcessedTokenAccount } from "@/hooks/use-wallet-tokens"
 import Link from "next/link"
 
 interface PortfolioOverviewProps {
-  assets: PortfolioAsset[]
+  assets: ProcessedTokenAccount[]
 }
 
 const PallyIcon = () => (
@@ -53,11 +53,11 @@ export function PortfolioOverview({ assets }: PortfolioOverviewProps) {
 
         <div className="space-y-3">
           {assets.map((asset) => (
-            <div key={asset.id} className="space-y-1">
+            <div key={asset.mint} className="space-y-1">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <PallyIcon />
-                  <p className="font-medium text-sm">{asset.name}</p>
+                  <p className="font-medium text-sm">{asset.metadata?.name || (asset.mint ? asset.mint.slice(0, 6) + '...' : 'Unknown')}</p>
                   <p className="text-xs text-gray-500">{asset.formattedAmount}</p>
                 </div>
                 <div className="text-right">

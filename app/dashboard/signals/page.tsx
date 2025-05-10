@@ -26,8 +26,25 @@ import { EditAlertDialog } from '@/components/dashboard/edit-alert-dialog'
 import { useWalletAuth } from "@/components/auth/wallet-context"
 import { fetchAlerts, createAlert, updateAlert, deleteAlert } from "@/lib/services/alert-supabase"
 import { SignalMonitor } from "@/lib/services/signal-monitor"
+import type { FC } from 'react'
 
-export default function SignalsPage() {
+// Define the insight type that matches AIInsights' expectations
+interface Insight {
+  symbol: string
+  insight: string
+  confidence: "high" | "medium" | "low"
+  timestamp: string
+}
+
+// Define the AI insight object returned from the API
+interface AIInsightResponse {
+  symbol: string
+  insight_text: string
+  confidence: "high" | "medium" | "low"
+  timestamp: string
+}
+
+const SignalsPage: FC = () => {
   const [alerts, setAlerts] = useState<CryptoAlert[]>([])
   const [signals, setSignals] = useState<CryptoSignal[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -45,6 +62,7 @@ export default function SignalsPage() {
   })
   const [editingAlert, setEditingAlert] = useState<CryptoAlert | null>(null)
   const [isEditAlertOpen, setIsEditAlertOpen] = useState(false)
+  const [aiInsights, setAiInsights] = useState<Insight[]>([])
   const { user } = useWalletAuth();
   const walletAddress = user?.address;
 
@@ -65,9 +83,10 @@ export default function SignalsPage() {
     signalMonitorRef.current = new SignalMonitor(
       (updatedSignals) => {
         // Only update if signals have actually changed
-        if (JSON.stringify(updatedSignals) !== JSON.stringify(signals)) {
-          setSignals(updatedSignals)
-        }
+        setSignals(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(updatedSignals)) return prev;
+          return updatedSignals;
+        });
       },
       (notification) => addNotification(notification)
     )
@@ -94,39 +113,89 @@ export default function SignalsPage() {
     }
   }, [webSocket.lastPrice]) // Only update when prices change
 
-  // Fetch initial data
+  // On mount, check if signals exist in the database. Only generate if empty.
   useEffect(() => {
-    const fetchData = async () => {
+    let isMounted = true;
+
+    const checkAndFetchSignals = async () => {
+      setIsLoading(true);
       try {
-        setIsLoading(true)
+        // Fetch signals from DB
+        const response = await fetch('/api/signals?limit=10');
+        if (!response.ok) throw new Error('Failed to fetch signals');
+        const data = await response.json();
 
-        // Define the cryptocurrencies we want to analyze
-        const cryptoIds = ["bitcoin", "ethereum", "solana", "binancecoin", "avalanche-2"]
-
-        // Fetch market data for alerts and dropdown options
-        const cryptoData = await fetchCryptoMarkets()
-
-        // Prepare crypto options for the create alert dialog
-        setCryptoOptions(
-          cryptoData.map((crypto) => ({
-            id: crypto.id,
-            name: crypto.name,
-            symbol: crypto.symbol.toUpperCase(),
-            price: crypto.priceValue,
-          }))
-        )
-
-        setError(null)
-      } catch (err) {
-        console.error("Error fetching data:", err)
-        setError("Failed to load signals and alerts. Please try again.")
+        if (isMounted) {
+          if (data.signals && data.signals.length > 0) {
+            // If signals exist, set them and do NOT generate new ones
+            setSignals(data.signals);
+          } else {
+            // If no signals, generate and then fetch again
+            const cryptoIds = ["BTC", "ETH", "SOL", "BNB", "AVAX"];
+            await generateRealSignals(cryptoIds);
+            // Wait for signals to be saved
+            await new Promise(res => setTimeout(res, 2000));
+            // Fetch again
+            const resp2 = await fetch('/api/signals?limit=10');
+            const data2 = await resp2.json();
+            if (data2.signals) setSignals(data2.signals);
+          }
+        }
+      } catch (error) {
+        if (isMounted) setError(error instanceof Error ? error.message : 'Failed to load signals');
       } finally {
-        setIsLoading(false)
+        if (isMounted) setIsLoading(false);
+      }
+    };
+
+    checkAndFetchSignals();
+
+    return () => { isMounted = false; };
+  }, []);
+
+  // Separate effect for fetching market data - run every 5 minutes
+  useEffect(() => {
+    let isMounted = true;
+    let timeoutId: NodeJS.Timeout;
+
+    const fetchMarketData = async () => {
+      try {
+        if (!isMounted) return;
+
+        const cryptoData = await fetchCryptoMarkets()
+        console.log('Fetched crypto market data:', cryptoData)
+
+        if (isMounted) {
+          setCryptoOptions(
+            cryptoData.map((crypto) => ({
+              id: crypto.id,
+              name: crypto.name,
+              symbol: crypto.symbol.toUpperCase(),
+              price: crypto.priceValue,
+            }))
+          )
+        }
+      } catch (error) {
+        console.error('Error fetching market data:', error)
       }
     }
 
-    fetchData()
-  }, [])
+    const scheduleNextFetch = () => {
+      timeoutId = setTimeout(() => {
+        fetchMarketData()
+        scheduleNextFetch()
+      }, 300000) // Fetch every 5 minutes
+    }
+
+    // Initial fetch
+    fetchMarketData()
+    scheduleNextFetch()
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId)
+    }
+  }, []) // Empty dependency array - only run once on mount
 
   // Get unique cryptocurrencies from signals for filter options
   const availableCryptos = useMemo(() => {
@@ -188,6 +257,23 @@ export default function SignalsPage() {
         })
       })
   }, [walletAddress])
+
+  // Fetch AI insights on page load
+  useEffect(() => {
+    const fetchExistingInsights = async () => {
+      const res = await fetch('/api/ai-insights?limit=3');
+      const data = await res.json();
+      if (data.insights) {
+        setAiInsights(data.insights.map((i: AIInsightResponse) => ({
+          symbol: i.symbol,
+          insight: i.insight_text,
+          confidence: i.confidence,
+          timestamp: i.timestamp,
+        })));
+      }
+    };
+    fetchExistingInsights();
+  }, []);
 
   // Create alert in Supabase
   const handleCreateAlert = async (newAlert: Omit<CryptoAlert, "id">) => {
@@ -328,7 +414,7 @@ export default function SignalsPage() {
             activeFilters={filters}
             availableCryptos={availableCryptos}
           />
-          <Button className="bg-black text-white hover:bg-gray-800" onClick={() => setIsCreateAlertOpen(true)}>
+          <Button className="" onClick={() => setIsCreateAlertOpen(true)}>
             <Plus size={16} className="mr-2" /> Create Alert
           </Button>
         </div>
@@ -534,7 +620,7 @@ export default function SignalsPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-3">
-                {signals.slice(0, 3).map((signal, index) => (
+                {aiInsights.map((insight, index) => (
                   <div key={`insight-${index}`} className="flex items-start space-x-3">
                     <div className="mt-1">
                       {index === 0 && <Brain className="h-5 w-5 text-green-600" />}
@@ -543,20 +629,16 @@ export default function SignalsPage() {
                     </div>
                     <div>
                       <h3 className="font-medium text-sm">
-                        {signal.type} {signal.symbol} {index === 0 ? "Signal" : index === 1 ? "Trend" : "Warning"}
+                        {insight.symbol} Market Insight
                       </h3>
-                      <p className="text-xs text-gray-600 mt-1">{signal.signal}</p>
+                      <p className="text-xs text-gray-600 mt-1">{insight.insight}</p>
                       <p className="text-xs text-gray-500 mt-1">
-                        {signal.time} • {signal.confidence}% confidence
+                        {new Date(insight.timestamp).toLocaleString()} • {insight.confidence} confidence
                       </p>
                     </div>
                   </div>
                 ))}
               </div>
-
-              <Button variant="outline" size="sm" className="w-full border-border">
-                View All Insights
-              </Button>
             </CardContent>
           </Card>
         </div>
@@ -580,3 +662,5 @@ export default function SignalsPage() {
     </>
   )
 }
+
+export default SignalsPage

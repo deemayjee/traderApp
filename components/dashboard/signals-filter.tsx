@@ -110,9 +110,9 @@ export function SignalsFilter({ onFilterChange, activeFilters, availableCryptos 
 
         <DropdownMenuGroup>
           <DropdownMenuLabel className="text-xs font-normal text-gray-500 pt-2">Cryptocurrencies</DropdownMenuLabel>
-          {availableCryptos.map((crypto) => (
+          {availableCryptos.map((crypto, idx) => (
             <DropdownMenuItem
-              key={crypto}
+              key={crypto + '-' + idx}
               onSelect={(e) => {
                 e.preventDefault()
                 toggleCrypto(crypto)
@@ -128,9 +128,9 @@ export function SignalsFilter({ onFilterChange, activeFilters, availableCryptos 
 
         <DropdownMenuGroup>
           <DropdownMenuLabel className="text-xs font-normal text-gray-500 pt-2">Signal Agents</DropdownMenuLabel>
-          {agents.map((agent) => (
+          {agents.map((agent, idx) => (
             <DropdownMenuItem
-              key={agent}
+              key={agent + '-' + idx}
               onSelect={(e) => {
                 e.preventDefault()
                 toggleAgent(agent)
@@ -146,9 +146,9 @@ export function SignalsFilter({ onFilterChange, activeFilters, availableCryptos 
 
         <DropdownMenuGroup>
           <DropdownMenuLabel className="text-xs font-normal text-gray-500 pt-2">Confidence Level</DropdownMenuLabel>
-          {confidenceLevels.map((level) => (
+          {confidenceLevels.map((level, idx) => (
             <DropdownMenuItem
-              key={level.label}
+              key={level.label + '-' + idx}
               onSelect={(e) => {
                 e.preventDefault()
                 setConfidence(level.value)
@@ -164,9 +164,9 @@ export function SignalsFilter({ onFilterChange, activeFilters, availableCryptos 
 
         <DropdownMenuGroup>
           <DropdownMenuLabel className="text-xs font-normal text-gray-500 pt-2">Timeframe</DropdownMenuLabel>
-          {timeframes.map((time) => (
+          {timeframes.map((time, idx) => (
             <DropdownMenuItem
-              key={time}
+              key={time + '-' + idx}
               onSelect={(e) => {
                 e.preventDefault()
                 setTimeframe(time === "All" ? null : time)

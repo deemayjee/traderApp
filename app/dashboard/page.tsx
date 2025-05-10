@@ -11,7 +11,6 @@ import { MarketOverview } from "@/components/dashboard/market-overview"
 import { Loader2, Bell } from "lucide-react"
 import {
   fetchBinanceTopTokens,
-  generatePortfolioFromCryptoData,
   type FormattedCryptoAsset,
   type CryptoAlert,
   type PortfolioAsset,
@@ -23,6 +22,7 @@ import { toast } from "@/components/ui/use-toast"
 import { useWalletAuth } from "@/components/auth/wallet-context"
 import { fetchAlerts, createAlert, updateAlert, deleteAlert } from "@/lib/services/alert-supabase"
 import { EditAlertDialog } from "@/components/dashboard/edit-alert-dialog"
+import { useWalletTokens } from "@/hooks/use-wallet-tokens"
 
 // Define the time range type that matches SimplePriceChart's expectations
 type ChartTimeRange = "1m" | "5m" | "15m" | "1h" | "4h" | "1d" | "7d" | "30d"
@@ -31,6 +31,14 @@ type ChartTimeRange = "1m" | "5m" | "15m" | "1h" | "4h" | "1d" | "7d" | "30d"
 interface Insight {
   symbol: string
   insight: string
+  confidence: "high" | "medium" | "low"
+  timestamp: string
+}
+
+// Define the AI insight object returned from the API
+interface AIInsightResponse {
+  symbol: string
+  insight_text: string
   confidence: "high" | "medium" | "low"
   timestamp: string
 }
@@ -52,7 +60,6 @@ export default function Dashboard() {
   const [selectedToken, setSelectedToken] = useState<FormattedCryptoAsset | null>(null)
   const [timeRange, setTimeRange] = useState<ChartTimeRange>("1d")
   const [alerts, setAlerts] = useState<CryptoAlert[]>([])
-  const [portfolioAssets, setPortfolioAssets] = useState<PortfolioAsset[]>([])
   const [showCreateAlert, setShowCreateAlert] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -61,6 +68,10 @@ export default function Dashboard() {
   const { getWalletAddress } = useWalletAuth()
   const [editingAlert, setEditingAlert] = useState<CryptoAlert | null>(null)
   const [isEditAlertOpen, setIsEditAlertOpen] = useState(false)
+  const { assets: walletAssets, isLoading: walletLoading } = useWalletTokens();
+  const [highPriorityInsights, setHighPriorityInsights] = useState<Insight[]>([]);
+  const marketDataRef = useRef<FormattedCryptoAsset[]>([]);
+  marketDataRef.current = marketData;
 
   // Load alerts from Supabase
   useEffect(() => {
@@ -162,8 +173,6 @@ export default function Dashboard() {
           setSelectedToken(data[0])
         }
 
-        // Remove the mock alerts generation
-        setPortfolioAssets(generatePortfolioFromCryptoData(data))
         setError(null)
       } catch (err) {
         console.error("Error loading market data:", err)
@@ -175,6 +184,91 @@ export default function Dashboard() {
 
     loadMarketData()
   }, [])
+
+  useEffect(() => {
+    // Fetch latest insights on page load
+    const fetchExistingInsights = async () => {
+      const res = await fetch('/api/ai-insights?limit=3');
+      const data = await res.json();
+      if (data.insights) {
+        setHighPriorityInsights(data.insights.map((i: AIInsightResponse) => ({
+          symbol: i.symbol,
+          insight: i.insight_text,
+          confidence: i.confidence,
+          timestamp: i.timestamp,
+        })));
+      }
+    };
+    fetchExistingInsights();
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchInsights = async () => {
+      const currentMarketData = marketDataRef.current;
+      const significantChanges = currentMarketData.filter(token => Math.abs(token.changePercent) > 5).slice(0, 3);
+      // Round changePercent for DB consistency
+      console.log('[AI Insights] fetchInsights called. Significant changes:', significantChanges.map(t => ({ symbol: t.symbol, changePercent: Math.round(t.changePercent * 100) / 100 })));
+      if (significantChanges.length === 0) {
+        if (isMounted) setHighPriorityInsights([]);
+        return;
+      }
+      const insights: Insight[] = [];
+      for (const token of significantChanges) {
+        const symbol = token.symbol;
+        const changePercent = Math.round(token.changePercent * 100) / 100;
+        const insightText = `Strong ${changePercent > 0 ? 'bullish' : 'bearish'} momentum detected`;
+        const confidence = 'high';
+        // Try to fetch from DB
+        const res = await fetch(`/api/ai-insights?symbol=${encodeURIComponent(symbol)}&changePercent=${encodeURIComponent(changePercent)}`);
+        const data = await res.json();
+        if (data.insight) {
+          insights.push({
+            symbol,
+            insight: data.insight.insight_text,
+            confidence: data.insight.confidence,
+            timestamp: data.insight.timestamp,
+          });
+        } else {
+          // Not found, create
+          const postRes = await fetch('/api/ai-insights', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ symbol, changePercent, insightText, confidence }),
+          });
+          const postData = await postRes.json();
+          if (postData.insight) {
+            insights.push({
+              symbol,
+              insight: postData.insight.insight_text,
+              confidence: postData.insight.confidence,
+              timestamp: postData.insight.timestamp,
+            });
+          }
+        }
+      }
+      if (isMounted) setHighPriorityInsights(insights);
+    };
+    // Set up interval
+    const interval = setInterval(async () => {
+      await fetchInsights();
+      // After generating, fetch the latest insights to display
+      const res = await fetch('/api/ai-insights?limit=3');
+      const data = await res.json();
+      if (data.insights) {
+        setHighPriorityInsights(data.insights.map((i: AIInsightResponse) => ({
+          symbol: i.symbol,
+          insight: i.insight_text,
+          confidence: i.confidence,
+          timestamp: i.timestamp,
+        })));
+      }
+    }, 60 * 60 * 1000); // every hour
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   const handleTokenSelect = (token: FormattedCryptoAsset) => {
     setSelectedToken(token)
@@ -286,20 +380,6 @@ export default function Dashboard() {
     />
   ) : null
 
-  // Get only high-priority insights for dashboard preview
-  const highPriorityInsights = useMemo(() => {
-    // Only update insights if there's a significant change in market data
-    const significantChanges = marketData.filter(token => Math.abs(token.changePercent) > 5)
-    if (significantChanges.length === 0) return []
-
-    return significantChanges.slice(0, 3).map(token => ({
-      symbol: token.symbol,
-      insight: `Strong ${token.changePercent > 0 ? 'bullish' : 'bearish'} momentum detected`,
-      confidence: 'high' as const,
-      timestamp: new Date().toISOString()
-    }))
-  }, [marketData])
-
   // Filter alerts to show only high-priority ones on dashboard
   const highPriorityAlerts = useMemo(() => 
     alerts
@@ -338,7 +418,13 @@ export default function Dashboard() {
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
               {topPerformers.length > 0 && <TopPerformers topCoins={topPerformers} />}
-              {portfolioAssets.length > 0 && <PortfolioOverview assets={portfolioAssets} />}
+              {walletLoading ? (
+                <div className="flex justify-center items-center h-40">
+                  <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
+                </div>
+              ) : (
+                <PortfolioOverview assets={walletAssets} />
+              )}
             </div>
           </div>
           <div className="space-y-6">
@@ -399,7 +485,13 @@ export default function Dashboard() {
           )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
             {topPerformers.length > 0 && <TopPerformers topCoins={topPerformers} />}
-            {portfolioAssets.length > 0 && <PortfolioOverview assets={portfolioAssets} />}
+            {walletLoading ? (
+              <div className="flex justify-center items-center h-40">
+                <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
+              </div>
+            ) : (
+              <PortfolioOverview assets={walletAssets} />
+            )}
           </div>
         </div>
         <div className="space-y-6">

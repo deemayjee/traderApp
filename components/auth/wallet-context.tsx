@@ -47,6 +47,28 @@ export function WalletAuthProvider({ children }: { children: React.ReactNode }) 
       console.log('syncUser effect triggered:', { authenticated, privyUser });
       setIsLoading(true)
 
+      // Check for existing session in localStorage
+      const storedSession = localStorage.getItem('pallycryp-auth-token');
+      if (storedSession) {
+        try {
+          const sessionData = JSON.parse(storedSession);
+          if (sessionData?.user?.id) {
+            setUser({
+              address: sessionData.user.id,
+              wallet: {
+                address: sessionData.user.id,
+                chain: 'solana',
+              },
+              id: sessionData.user.id,
+            });
+            setIsLoading(false);
+            return;
+          }
+        } catch (error) {
+          console.error('Error parsing stored session:', error);
+        }
+      }
+
       if (authenticated && privyUser) {
         try {
           // Get the Solana wallet address directly from privyUser.wallet

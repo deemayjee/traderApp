@@ -35,40 +35,43 @@ export class BetaAccessService {
     }
   }
 
-  async createAccessCode(code: string): Promise<boolean> {
+  async createAccessCode(code: string): Promise<{ success: boolean; code?: string }> {
     try {
-      const { error } = await supabase
-        .from(this.tableName)
-        .insert([{
-          code,
-          is_active: true
-        }])
+      const response = await fetch('/api/beta-access/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
 
-      if (error) {
-        console.error('Error creating access code:', error)
-        return false
+      if (!response.ok) {
+        throw new Error('Failed to generate code')
       }
 
-      return true
+      const data = await response.json()
+      return { success: !!data.code, code: data.code }
     } catch (error) {
       console.error('Error in createAccessCode:', error)
-      return false
+      return { success: false }
     }
   }
 
   async deactivateAccessCode(code: string): Promise<boolean> {
     try {
-      const { error } = await supabase
-        .from(this.tableName)
-        .update({ is_active: false })
-        .eq('code', code)
+      const response = await fetch('/api/beta-access/deactivate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ code }),
+      })
 
-      if (error) {
-        console.error('Error deactivating access code:', error)
-        return false
+      if (!response.ok) {
+        throw new Error('Failed to deactivate code')
       }
 
-      return true
+      const data = await response.json()
+      return data.success
     } catch (error) {
       console.error('Error in deactivateAccessCode:', error)
       return false

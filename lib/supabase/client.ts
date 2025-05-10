@@ -13,6 +13,22 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
+    storageKey: 'pallycryp-auth-token',
+    storage: {
+      getItem: (key) => {
+        if (typeof window === 'undefined') return null
+        const value = window.localStorage.getItem(key)
+        return value ? JSON.parse(value) : null
+      },
+      setItem: (key, value) => {
+        if (typeof window === 'undefined') return
+        window.localStorage.setItem(key, JSON.stringify(value))
+      },
+      removeItem: (key) => {
+        if (typeof window === 'undefined') return
+        window.localStorage.removeItem(key)
+      },
+    },
   },
   global: {
     headers: {

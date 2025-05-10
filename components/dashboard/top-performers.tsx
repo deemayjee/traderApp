@@ -38,7 +38,7 @@ export function TopPerformers({ topCoins }: TopPerformersProps) {
       <CardContent>
         <div className="space-y-3">
           {topCoins.map((coin) => (
-            <div key={coin.id} className="flex items-center justify-between p-2 rounded-md hover:bg-gray-50">
+            <div key={coin.id} className="flex items-center justify-between p-2 rounded-md hover:bg-gray-50 dark:hover:bg-gray-900">
               <div className="flex items-center space-x-3">
                 <PallyIcon />
                 <div>

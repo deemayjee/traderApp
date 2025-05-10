@@ -1,18 +1,14 @@
 import { NextResponse } from "next/server"
 import { SettingsService } from "@/lib/services/settings-service"
 import { generateUUID } from '@/lib/utils/uuid'
+import { getUserDisplayInfo } from '@/lib/utils/user-display'
+import type { UserProfile } from "@/lib/types/settings"
 
 interface User {
   wallet_address: string
   username: string | null
   email: string | null
   avatar_url: string | null
-}
-
-interface UserProfile {
-  username: string | null
-  avatar_url: string | null
-  bio: string | null
 }
 
 interface Post {
@@ -157,10 +153,9 @@ export async function GET(request: Request) {
     // Format the response
     const formattedPosts = (posts as unknown as Post[]).map(post => {
       // Find profile for this post
-      const profile = profiles.find(p => p.wallet_address === post.wallet_address)
-      const username = profile?.username || post.users?.[0]?.username
+      const profile = profiles.find(p => p.wallet_address === post.wallet_address) as UserProfile | undefined
+      const userInfo = getUserDisplayInfo(profile || null, post.wallet_address)
       const avatarUrl = profile?.avatar_url || post.users?.[0]?.avatar_url || '/placeholder.svg'
-      const walletAddress = post.wallet_address
 
       return {
         id: post.id,
@@ -171,15 +166,13 @@ export async function GET(request: Request) {
         accuracyPercentage: post.accuracy_percentage,
         createdAt: post.created_at,
         updatedAt: post.updated_at,
-        walletAddress: walletAddress,
+        walletAddress: post.wallet_address,
         author: {
-          username: username || `User ${walletAddress.substring(0, 4)}...${walletAddress.substring(-4)}`,
+          username: userInfo.name,
           email: post.users?.[0]?.email || '',
           avatar: avatarUrl
         },
-        handle: username 
-          ? `@${username.toLowerCase().replace(/\s+/g, "")}` 
-          : `@${walletAddress.substring(0, 8)}`,
+        handle: userInfo.handle,
         engagement: {
           likes: likes?.filter(like => like.post_id === post.id).length || 0,
           comments: comments?.filter(comment => comment.post_id === post.id).length || 0,
