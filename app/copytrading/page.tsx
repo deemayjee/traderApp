@@ -1,264 +1,286 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { DepositVerification } from "@/components/copytrading/deposit-verification"
-import { CopySettings } from "@/components/copytrading/copy-settings"
-import { ActiveCopies } from "@/components/copytrading/active-copies"
-import { TopTraders } from "@/components/copytrading/top-traders"
-import { CopyTradingStats } from "@/components/copytrading/copy-trading-stats"
-import { TradeMonitor } from "@/components/copytrading/trade-monitor"
-import { toast } from "sonner"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useWalletAuth } from "@/hooks/use-wallet-auth"
-import { Dialog } from "@/components/ui/dialog"
+import { useState, useEffect } from "react"
+import { useWalletAuth } from "@/components/auth/wallet-context"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
+import { toast } from "sonner"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { AlertCircle, Loader2 } from "lucide-react"
+import { AIWalletCreator } from "@/components/copytrading/ai-wallet-creator"
+import { ActiveCopyTrades } from "@/components/copytrading/active-copy-trades"
+import { CopyTradingStats } from "@/components/copytrading/copytrading-stats"
 
 interface CopyTrade {
   id: string
-  trader_wallet: string
-  trader_name: string
-  allocation: number
-  max_slippage: number
-  stop_loss: number
-  status: string
+  tokenAddress: string
+  tokenSymbol: string
+  userAmount: number
+  aiAmount: number
+  lockPeriod: number
+  startDate: Date
+  endDate: Date
+  status: "active" | "completed" | "cancelled"
+}
+
+interface TokenMetadata {
+  name: string
+  symbol: string
+  decimals: number
 }
 
 export default function CopyTradingPage() {
   const { user } = useWalletAuth()
-  const [isDepositVerified, setIsDepositVerified] = useState(false)
-  const [copiedWallets, setCopiedWallets] = useState<Array<CopyTrade>>([])
-  const [selectedTrader, setSelectedTrader] = useState<{ address: string; name: string } | null>(null)
-  const [activeTab, setActiveTab] = useState("overview")
-  const [isLoading, setIsLoading] = useState(true)
-  const [editingWallet, setEditingWallet] = useState<CopyTrade | null>(null)
-  const [editForm, setEditForm] = useState({ allocation: '', maxSlippage: '', stopLoss: '' })
-  const [isSaving, setIsSaving] = useState(false)
+  const [tokenAddress, setTokenAddress] = useState("")
+  const [tokenSymbol, setTokenSymbol] = useState("")
+  const [tokenName, setTokenName] = useState("")
+  const [isLoadingToken, setIsLoadingToken] = useState(false)
+  const [userAmount, setUserAmount] = useState("")
+  const [aiAmount, setAiAmount] = useState("0.5") // Default AI amount
+  const [showConfirmation, setShowConfirmation] = useState(false)
+  const [isProcessing, setIsProcessing] = useState(false)
 
-  useEffect(() => {
-    if (user?.wallet?.address) {
-      fetchActiveCopyTrades()
-    }
-  }, [user?.wallet?.address])
-
-  useEffect(() => {
-    if (editingWallet) {
-      setEditForm({
-        allocation: editingWallet.allocation.toString(),
-        maxSlippage: editingWallet.max_slippage.toString(),
-        stopLoss: editingWallet.stop_loss.toString(),
-      })
-    }
-  }, [editingWallet])
-
-  const fetchActiveCopyTrades = async () => {
+  const fetchTokenMetadata = async (address: string) => {
+    if (!address) return
+    
+    setIsLoadingToken(true)
     try {
-      console.log("Fetching active copy trades for wallet:", user?.wallet?.address)
-      const response = await fetch(`/api/copy-trading/active?userWallet=${user?.wallet?.address}`)
-      const data = await response.json()
-      console.log("Active copy trades response:", data)
-
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to fetch active copy trades")
+      // Try Jupiter API first
+      const jupiterResponse = await fetch(`https://token.jup.ag/all`)
+      const jupiterTokens = await jupiterResponse.json()
+      const token = jupiterTokens.find((t: any) => t.address === address)
+      
+      if (token) {
+        setTokenName(token.name)
+        setTokenSymbol(token.symbol)
+        return
       }
 
-      // Store the full trade object
-      setCopiedWallets(data.trades)
-      setIsDepositVerified(true)
+      // If not found in Jupiter, try Raydium
+      const raydiumResponse = await fetch(`https://api.raydium.io/v2/sdk/token/raydium.mainnet.json`)
+      const raydiumData = await raydiumResponse.json()
+      const raydiumToken = raydiumData.official.find((t: any) => t.mint === address) || 
+                          raydiumData.unOfficial.find((t: any) => t.mint === address)
+      
+      if (raydiumToken) {
+        setTokenName(raydiumToken.name)
+        setTokenSymbol(raydiumToken.symbol)
+        return
+      }
+
+      // If not found in either, clear the fields
+      setTokenName("")
+      setTokenSymbol("")
+      toast.error("Token not found in Jupiter or Raydium")
     } catch (error) {
-      console.error("Error fetching active copy trades:", error)
-      toast.error("Failed to load active copy trades")
-    } finally {
-      setIsLoading(false)
+      console.error("Error fetching token metadata:", error)
+      toast.error("Failed to fetch token information")
+      setTokenName("")
+      setTokenSymbol("")
     }
+    setIsLoadingToken(false)
   }
 
-  const handleDepositVerified = () => {
-    console.log("Deposit verified")
-    setIsDepositVerified(true)
+  // Debounce token address changes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (tokenAddress) {
+        fetchTokenMetadata(tokenAddress)
+      }
+    }, 500) // Wait 500ms after user stops typing
+
+    return () => clearTimeout(timer)
+  }, [tokenAddress])
+
+  const handleStartCopyTrade = async () => {
+    if (!user?.wallet?.address) {
+      toast.error("Please connect your wallet first")
+      return
+    }
+
+    if (!tokenAddress || !tokenSymbol || !userAmount) {
+      toast.error("Please fill in all required fields")
+      return
+    }
+
+    setShowConfirmation(true)
   }
 
-  const handleWalletAdded = (walletAddress: string, walletName: string) => {
-    console.log("Wallet added:", { walletAddress, walletName })
-    setSelectedTrader({ address: walletAddress, name: walletName })
-  }
-
-  const handleSettingsSaved = (settings: {
-    allocation: number
-    maxSlippage: number
-    stopLoss: number
-  }) => {
-    if (!selectedTrader) return
-
-    console.log("Settings saved:", { selectedTrader, settings })
-    // Remove optimistic update to copiedWallets
-    setSelectedTrader(null)
-    toast.success(`Started copying ${selectedTrader.name} with ${settings.allocation} SOL allocation`)
-    // Refetch active copy trades from backend
-    fetchActiveCopyTrades()
-  }
-
-  const handleEdit = (wallet: { address: string; name: string }) => {
-    // Find the full CopyTrade object
-    const trade = copiedWallets.find(t => t.trader_wallet === wallet.address)
-    if (trade) setEditingWallet(trade)
-  }
-
-  const handleEditFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setEditForm({ ...editForm, [e.target.name]: e.target.value })
-  }
-
-  const handleEditSave = async () => {
-    if (!editingWallet) return
-    setIsSaving(true)
+  const handleConfirmCopyTrade = async () => {
+    setIsProcessing(true)
     try {
-      const response = await fetch(`/api/copy-trading/update`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/copy-trading/start", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
-          id: editingWallet.id,
-          allocation: parseFloat(editForm.allocation),
-          maxSlippage: parseFloat(editForm.maxSlippage),
-          stopLoss: parseFloat(editForm.stopLoss),
-        })
+          inputTokenAddress: "So11111111111111111111111111111111111111112", // SOL
+          outputTokenAddress: tokenAddress,
+          inputTokenSymbol: "SOL",
+          outputTokenSymbol: tokenSymbol,
+          inputAmount: parseFloat(userAmount),
+          inputDecimals: 9,
+          outputDecimals: 9,
+          aiAmount: parseFloat(aiAmount),
+          userWallet: user?.wallet?.address,
+        }),
       })
-      if (!response.ok) throw new Error('Failed to update copy trade')
-      toast.success('Copy trade updated!')
-      setEditingWallet(null)
-      fetchActiveCopyTrades()
-    } catch (err) {
-      toast.error('Failed to update copy trade')
-    } finally {
-      setIsSaving(false)
-    }
-  }
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
-      </div>
-    )
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to start copy trade")
+      }
+
+      toast.success("Copy trade started successfully!")
+      setShowConfirmation(false)
+      
+      // Reset form
+      setTokenAddress("")
+      setTokenSymbol("")
+      setUserAmount("")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to start copy trade")
+    } finally {
+      setIsProcessing(false)
+    }
   }
 
   return (
-    <div className="container mx-auto py-8 space-y-8">
-      <h1 className="text-3xl font-bold">Copy Trading</h1>
-      
-      {!isDepositVerified && !user?.wallet?.address ? (
-        <DepositVerification
-          onDepositVerified={handleDepositVerified}
-          onWalletAdded={handleWalletAdded}
-        />
-      ) : selectedTrader ? (
-        <CopySettings
-          traderWallet={selectedTrader.address}
-          traderName={selectedTrader.name}
-          onSettingsSaved={handleSettingsSaved}
-        />
-      ) : (
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList>
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="monitor">Trade Monitor</TabsTrigger>
-            <TabsTrigger value="traders">Top Traders</TabsTrigger>
-          </TabsList>
+    <div className="container mx-auto py-8">
+      <div className="max-w-4xl mx-auto space-y-8">
+        <div className="text-center space-y-4">
+          <h1 className="text-3xl font-bold">AI Copy Trading</h1>
+          <p className="text-muted-foreground">
+            Create your AI trading partner and start copy trading with confidence
+          </p>
+        </div>
 
-          <TabsContent value="overview" className="space-y-6">
-            <div className="flex justify-end mb-4">
-              <Button onClick={() => setSelectedTrader({ address: '', name: '' })}>
-                Start Copy Trading
+        <div className="bg-muted/50 rounded-lg p-6">
+          <AIWalletCreator />
+        </div>
+
+        <CopyTradingStats />
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Start New Copy Trade</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="tokenAddress">Token Address</Label>
+                <Input
+                  id="tokenAddress"
+                  value={tokenAddress}
+                  onChange={(e) => setTokenAddress(e.target.value)}
+                  placeholder="Enter token address"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="tokenSymbol">Token</Label>
+                <Input
+                  id="tokenSymbol"
+                  value={tokenName ? `${tokenName} (${tokenSymbol})` : tokenSymbol}
+                  placeholder={isLoadingToken ? "Loading..." : "e.g., Wrapped SOL (SOL)"}
+                  disabled={isLoadingToken}
+                />
+                {isLoadingToken && (
+                  <div className="flex items-center text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    Fetching token information...
+                  </div>
+                )}
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="userAmount">Your Amount (SOL)</Label>
+                <Input
+                  id="userAmount"
+                  type="number"
+                  value={userAmount}
+                  onChange={(e) => setUserAmount(e.target.value)}
+                  placeholder="Enter amount in SOL"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="aiAmount">AI Copy Amount (SOL)</Label>
+                <Input
+                  id="aiAmount"
+                  type="number"
+                  value={aiAmount}
+                  onChange={(e) => setAiAmount(e.target.value)}
+                  placeholder="Enter AI copy amount"
+                />
+              </div>
+
+              <Button 
+                className="w-full" 
+                onClick={handleStartCopyTrade}
+                disabled={!user?.wallet?.address}
+              >
+                Start Copy Trade
               </Button>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <CopyTradingStats />
-              <ActiveCopies
-                wallets={copiedWallets.map(trade => ({ address: trade.trader_wallet, name: trade.trader_name }))}
-                onEdit={handleEdit}
-              />
-            </div>
-          </TabsContent>
+            </CardContent>
+          </Card>
 
-          <TabsContent value="monitor" className="space-y-6">
-            {copiedWallets.length > 0 ? (
-              copiedWallets.map((trade: CopyTrade) => {
-                console.log("Rendering trade monitor for trade:", trade)
-                return (
-                  <TradeMonitor
-                    key={trade.trader_wallet}
-                    traderAddress={trade.trader_wallet}
-                    allocation={trade.allocation}
-                    maxSlippage={trade.max_slippage}
-                    stopLoss={trade.stop_loss}
-                  />
-                )
-              })
-            ) : (
-              <div className="text-center py-8">
-                <p className="text-muted-foreground">No active copy trades found</p>
-                <p className="text-sm text-muted-foreground mt-2">Copied wallets count: {copiedWallets.length}</p>
-              </div>
-            )}
-          </TabsContent>
+          <ActiveCopyTrades />
+        </div>
+      </div>
 
-          <TabsContent value="traders">
-            <TopTraders />
-          </TabsContent>
-        </Tabs>
-      )}
+      <Dialog open={showConfirmation} onOpenChange={setShowConfirmation}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm Copy Trade</DialogTitle>
+            <DialogDescription>
+              Please review your copy trade details before proceeding.
+            </DialogDescription>
+          </DialogHeader>
 
-      {/* Edit Modal */}
-      {editingWallet && (
-        <Dialog open={!!editingWallet} onOpenChange={open => !open && setEditingWallet(null)}>
-          <div className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-40">
-            <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
-              <h2 className="text-xl font-semibold mb-4">Edit Copy Trade</h2>
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="allocation">Allocation (SOL)</Label>
-                  <Input
-                    id="allocation"
-                    name="allocation"
-                    type="number"
-                    min="0"
-                    value={editForm.allocation}
-                    onChange={handleEditFormChange}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="maxSlippage">Max Slippage (%)</Label>
-                  <Input
-                    id="maxSlippage"
-                    name="maxSlippage"
-                    type="number"
-                    min="0"
-                    value={editForm.maxSlippage}
-                    onChange={handleEditFormChange}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="stopLoss">Stop Loss (%)</Label>
-                  <Input
-                    id="stopLoss"
-                    name="stopLoss"
-                    type="number"
-                    min="0"
-                    value={editForm.stopLoss}
-                    onChange={handleEditFormChange}
-                  />
-                </div>
-              </div>
-              <div className="flex justify-end gap-2 mt-6">
-                <Button variant="outline" onClick={() => setEditingWallet(null)} disabled={isSaving}>Cancel</Button>
-                <Button onClick={handleEditSave} disabled={isSaving}>
-                  {isSaving ? 'Saving...' : 'Save'}
-                </Button>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <h4 className="font-medium">Trade Details</h4>
+              <div className="bg-muted/50 p-3 rounded-lg space-y-2">
+                <p className="text-sm">
+                  <span className="text-muted-foreground">Token:</span> {tokenSymbol}
+                </p>
+                <p className="text-sm font-mono">
+                  <span className="text-muted-foreground">Address:</span> {tokenAddress}
+                </p>
+                <p className="text-sm">
+                  <span className="text-muted-foreground">Your Amount:</span> {userAmount} SOL
+                </p>
+                <p className="text-sm">
+                  <span className="text-muted-foreground">AI Copy Amount:</span> {aiAmount} SOL
+                </p>
               </div>
             </div>
+
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Important</AlertTitle>
+              <AlertDescription>
+                The AI will copy your trade with the specified amount. Make sure you have enough SOL in your wallet.
+              </AlertDescription>
+            </Alert>
           </div>
-        </Dialog>
-      )}
+
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowConfirmation(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleConfirmCopyTrade} disabled={isProcessing}>
+              {isProcessing ? "Processing..." : "Confirm"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

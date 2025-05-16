@@ -1,8 +1,14 @@
 "use client"
 
-import React, { createContext, useContext, useState, useEffect } from "react"
-import { usePrivy } from '@privy-io/react-auth';
+import React, { createContext, useContext, useState, useEffect, useCallback, lazy, Suspense } from "react"
+import { usePrivy } from '@privy-io/react-auth'
 import { supabase } from '@/lib/supabase'
+import { SessionStorage } from '@/lib/services/session-storage'
+import { Loading } from '@/components/ui/loading'
+
+// Lazy load components
+const WalletConnectModal = lazy(() => import('@/components/wallet/wallet-connect-modal'))
+const WalletErrorModal = lazy(() => import('@/components/wallet/wallet-error-modal'))
 
 type WalletData = {
   address: string
@@ -38,134 +44,116 @@ const WalletContext = createContext<WalletContextType>({
 export const useWalletAuth = () => useContext(WalletContext)
 
 export function WalletAuthProvider({ children }: { children: React.ReactNode }) {
-  const { login: privyLogin, logout: privyLogout, authenticated, user: privyUser } = usePrivy();
+  const { login: privyLogin, logout: privyLogout, authenticated, user: privyUser } = usePrivy()
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [showConnectModal, setShowConnectModal] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const sessionStorage = SessionStorage.getInstance()
+
+  // Parallel API calls function
+  const syncUserWithBackend = useCallback(async (walletAddress: string, userId: string) => {
+    try {
+      const [userResponse, supabaseResponse] = await Promise.all([
+        fetch("/api/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            wallet: { address: walletAddress, chain: 'solana' }
+          })
+        }),
+        supabase.rpc('set_current_wallet_address', {
+          wallet_address: walletAddress
+        })
+      ])
+
+      if (!userResponse.ok) {
+        const errorText = await userResponse.text()
+        throw new Error(`API error: ${userResponse.status} ${errorText}`)
+      }
+
+      const { error: supabaseError } = supabaseResponse
+      if (supabaseError) {
+        throw new Error(`Supabase error: ${supabaseError.message}`)
+      }
+
+      return true
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to sync user data')
+      return false
+    }
+  }, [])
 
   useEffect(() => {
     const syncUser = async () => {
-      console.log('syncUser effect triggered:', { authenticated, privyUser });
       setIsLoading(true)
 
-      // Check for existing session in localStorage
-      const storedSession = localStorage.getItem('pallycryp-auth-token');
-      if (storedSession) {
-        try {
-          const sessionData = JSON.parse(storedSession);
-          if (sessionData?.user?.id) {
-            setUser({
-              address: sessionData.user.id,
-              wallet: {
-                address: sessionData.user.id,
-                chain: 'solana',
-              },
-              id: sessionData.user.id,
-            });
-            setIsLoading(false);
-            return;
-          }
-        } catch (error) {
-          console.error('Error parsing stored session:', error);
+      try {
+        // First check session storage
+        const cachedUser = sessionStorage.getSession()
+        if (cachedUser) {
+          setUser(cachedUser)
+          setIsLoading(false)
+          return
         }
-      }
 
-      if (authenticated && privyUser) {
-        try {
-          // Get the Solana wallet address directly from privyUser.wallet
-          const solanaWallet = privyUser.wallet;
-          const walletAddress = solanaWallet?.address;
+        // Then check Privy
+        if (authenticated && privyUser?.wallet?.address) {
+          const walletAddress = privyUser.wallet.address
+          const userData: User = {
+            address: walletAddress,
+            wallet: {
+              address: walletAddress,
+              chain: 'solana',
+            },
+            id: privyUser.id,
+          }
+
+          // Sync with backend in parallel
+          await syncUserWithBackend(walletAddress, privyUser.id)
           
-          if (walletAddress) {
-            console.log('Wallet connected:', {
-              address: walletAddress,
-            });
-
-            const userData: User = {
-              address: walletAddress,
-              wallet: {
-                address: walletAddress,
-                chain: 'solana',
-              },
-              id: privyUser.id,
-              // name, avatar, etc. can be left undefined if not available
-            };
-
-            setUser(userData);
-
-            try {
-              console.log('Attempting to save wallet data to API:', userData.wallet);
-              // Save the wallet info to your backend
-              const response = await fetch("/api/users", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  wallet: userData.wallet,
-                }),
-              });
-
-              console.log('API response status:', response.status);
-              
-              if (!response.ok) {
-                const errorText = await response.text();
-                console.error(`API error: ${response.status}`, errorText);
-              } else {
-                const data = await response.json();
-                console.log("User successfully synced with Supabase:", data);
-
-                // Set the wallet address in the session
-                try {
-                  const { error: setWalletError } = await supabase.rpc('set_current_wallet_address', {
-                    wallet_address: walletAddress
-                  });
-                  if (setWalletError) {
-                    console.error("Error setting wallet address:", setWalletError);
-                  }
-                } catch (error) {
-                  console.error("Error setting wallet address:", error);
-                }
-              }
-            } catch (error) {
-              console.error("Error syncing user with Supabase:", error);
-            }
-          } else {
-            setUser(null);
-          }
-        } catch (error) {
-          console.error("Error processing wallet data:", error);
-          setUser(null);
+          setUser(userData)
+          sessionStorage.setSession(userData)
+        } else {
+          setUser(null)
         }
-      } else {
-        setUser(null);
+      } catch (error) {
+        setUser(null)
+        setError(error instanceof Error ? error.message : 'An error occurred')
+      } finally {
+        setIsLoading(false)
       }
+    }
 
-      setIsLoading(false);
-    };
-
-    syncUser();
-  }, [authenticated, privyUser]);
+    syncUser()
+  }, [authenticated, privyUser, syncUserWithBackend])
 
   const login = async () => {
     try {
-      await privyLogin();
+      setShowConnectModal(true)
+      await privyLogin()
     } catch (err) {
-      console.error("Login failed:", err);
-      throw err;
+      setError(err instanceof Error ? err.message : 'Login failed')
+      throw err
     }
-  };
+  }
 
   const logout = async () => {
     try {
-      await privyLogout();
-      setUser(null);
+      await privyLogout()
+      setUser(null)
+      sessionStorage.clearSession()
     } catch (err) {
-      console.error("Logout failed:", err);
-      throw err;
+      setError(err instanceof Error ? err.message : 'Logout failed')
+      throw err
     }
-  };
+  }
 
-  const getWalletAddress = () => user?.address || null;
+  const getWalletAddress = () => user?.address || null
+
+  if (isLoading) {
+    return <Loading variant="fullscreen" />
+  }
 
   return (
     <WalletContext.Provider
@@ -179,6 +167,22 @@ export function WalletAuthProvider({ children }: { children: React.ReactNode }) 
       }}
     >
       {children}
+      
+      <Suspense fallback={<Loading variant="fullscreen" />}>
+        {showConnectModal && (
+          <WalletConnectModal
+            onClose={() => setShowConnectModal(false)}
+            onError={(error) => setError(error)}
+          />
+        )}
+        
+        {error && (
+          <WalletErrorModal
+            error={error}
+            onClose={() => setError(null)}
+          />
+        )}
+      </Suspense>
     </WalletContext.Provider>
-  );
+  )
 } 

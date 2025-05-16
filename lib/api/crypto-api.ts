@@ -1017,8 +1017,11 @@ export async function fetchBinanceTopTokens(limit: number = 10): Promise<Formatt
     if (!response.ok) throw new Error(`Binance API error: ${response.status}`)
     const data = await response.json()
 
-    // Filter for USDT pairs only (most popular)
-    const usdtPairs = data.filter((item: any) => item.symbol.endsWith('USDT'))
+    // Filter for USDT pairs only (most popular) and exclude USDC
+    const usdtPairs = data.filter((item: any) => 
+      item.symbol.endsWith('USDT') && 
+      !item.symbol.includes('USDC')
+    )
 
     // Sort by 24h quote volume (descending)
     usdtPairs.sort((a: any, b: any) => Number(b.quoteVolume) - Number(a.quoteVolume))

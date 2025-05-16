@@ -416,16 +416,6 @@ export default function Dashboard() {
                 onTokenSelect={handleTokenSelect}
               />
             )}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-              {topPerformers.length > 0 && <TopPerformers topCoins={topPerformers} />}
-              {walletLoading ? (
-                <div className="flex justify-center items-center h-40">
-                  <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
-                </div>
-              ) : (
-                <PortfolioOverview assets={walletAssets} />
-              )}
-            </div>
           </div>
           <div className="space-y-6">
             <AIInsights insights={highPriorityInsights} isPreview={true} />
@@ -437,6 +427,13 @@ export default function Dashboard() {
               onEditAlert={handleEditAlert}
               isPreview={true}
             />
+            {walletLoading ? (
+              <div className="flex justify-center items-center h-40">
+                <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
+              </div>
+            ) : (
+              <PortfolioOverview assets={walletAssets} />
+            )}
           </div>
         </div>
 
@@ -483,16 +480,6 @@ export default function Dashboard() {
               onTokenSelect={handleTokenSelect}
             />
           )}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-            {topPerformers.length > 0 && <TopPerformers topCoins={topPerformers} />}
-            {walletLoading ? (
-              <div className="flex justify-center items-center h-40">
-                <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
-              </div>
-            ) : (
-              <PortfolioOverview assets={walletAssets} />
-            )}
-          </div>
         </div>
         <div className="space-y-6">
           <AIInsights insights={highPriorityInsights} isPreview={true} />
@@ -504,6 +491,13 @@ export default function Dashboard() {
             onEditAlert={handleEditAlert}
             isPreview={true}
           />
+          {walletLoading ? (
+            <div className="flex justify-center items-center h-40">
+              <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
+            </div>
+          ) : (
+            <PortfolioOverview assets={walletAssets} />
+          )}
         </div>
       </div>
 

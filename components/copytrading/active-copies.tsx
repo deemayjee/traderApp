@@ -1,78 +1,147 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
-import { Progress } from "@/components/ui/progress"
-import { Settings, ArrowUpRight, StopCircle, Pencil } from "lucide-react"
-import { useState } from "react"
+import { useToast } from "@/components/ui/use-toast"
+import { useWalletAuth } from "@/components/auth/wallet-context"
 
-interface Wallet {
-  address: string
-  name: string
+interface CopyTrade {
+  id: string
+  user_wallet: string
+  input_token: string
+  output_token: string
+  input_amount: number
+  ai_amount: number
+  status: string
+  created_at: string
 }
 
-interface ActiveCopiesProps {
-  wallets: Wallet[]
-  onStopCopying?: (address: string) => void
-  onEdit?: (wallet: Wallet) => void
-}
+export function ActiveCopies() {
+  const [activeCopies, setActiveCopies] = useState<CopyTrade[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const { toast } = useToast()
+  const { user } = useWalletAuth()
 
-export function ActiveCopies({ wallets, onStopCopying, onEdit }: ActiveCopiesProps) {
-  const [stopping, setStopping] = useState<string | null>(null)
+  const fetchActiveCopies = async () => {
+    if (!user?.wallet?.address) return
+
+    try {
+      const response = await fetch(`/api/copy-trading/active?wallet=${user.wallet.address}`)
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to fetch active copies")
+      }
+
+      setActiveCopies(data)
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to fetch active copies",
+        variant: "destructive"
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleStopCopy = async (copyId: string) => {
+    try {
+      const response = await fetch(`/api/copy-trading/stop/${copyId}`, {
+        method: "POST"
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to stop copy trade")
+      }
+
+      toast({
+        title: "Success",
+        description: "Copy trade stopped successfully"
+      })
+
+      // Refresh the list
+      fetchActiveCopies()
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to stop copy trade",
+        variant: "destructive"
+      })
+    }
+  }
+
+  useEffect(() => {
+    fetchActiveCopies()
+  }, [user?.wallet?.address])
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Active Copy Trades</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p>Loading...</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (activeCopies.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Active Copy Trades</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p>No active copy trades found.</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
   return (
-    <Card className="border-gray-200">
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-lg font-semibold">Active Copy Trades</CardTitle>
-        <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-          <Settings className="h-4 w-4" />
-        </Button>
+    <Card>
+      <CardHeader>
+        <CardTitle>Active Copy Trades</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
-        {wallets.length > 0 ? (
-          <>
-            {wallets.map((wallet) => (
-              <div key={wallet.address} className="border border-gray-200 rounded-lg p-4">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex items-center space-x-3 min-w-0">
-                    <Avatar className="h-10 w-10">
-                      <AvatarImage src={"/placeholder.svg"} alt={wallet.name} />
-                      <AvatarFallback>{wallet.name.charAt(0)}</AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0">
-                      <p className="font-medium truncate max-w-[120px]">{wallet.name}</p>
-                      <p className="text-xs text-gray-500 truncate max-w-[200px]">{wallet.address}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="icon" className="h-8 w-8" aria-label="Edit" onClick={() => onEdit && onEdit(wallet)}>
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      className="ml-2 whitespace-nowrap"
-                      disabled={stopping === wallet.address}
-                      onClick={async () => {
-                        if (!onStopCopying) return
-                        setStopping(wallet.address)
-                        await onStopCopying(wallet.address)
-                        setStopping(null)
-                      }}
-                    >
-                      {stopping === wallet.address ? "Stopping..." : "Stop Copying"}
-                    </Button>
-                  </div>
-                </div>
+      <CardContent>
+        <div className="space-y-4">
+          {activeCopies.map((copy) => (
+            <div
+              key={copy.id}
+              className="flex items-center justify-between p-4 border rounded-lg"
+            >
+              <div className="space-y-1">
+                <p className="font-medium">
+                  {copy.input_token} → {copy.output_token}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Amount: {copy.input_amount} SOL
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  AI Copy: {copy.ai_amount} SOL
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Status: {copy.status}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Started: {new Date(copy.created_at).toLocaleString()}
+                </p>
               </div>
-            ))}
-          </>
-        ) : (
-          <div className="text-center py-8">
-            <p className="text-gray-500">You are not copying any traders yet.</p>
-            <Button className="mt-4 bg-black text-white hover:bg-gray-800">Start Copy Trading</Button>
-          </div>
-        )}
+              <Button
+                variant="destructive"
+                onClick={() => handleStopCopy(copy.id)}
+              >
+                Stop Copy
+              </Button>
+            </div>
+          ))}
+        </div>
       </CardContent>
     </Card>
   )

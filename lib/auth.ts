@@ -1,6 +1,8 @@
 import { supabaseAdmin } from '@/lib/supabase/server-admin'
 import { NextAuthOptions } from "next-auth"
 import { WalletAdapter } from "@/lib/wallet-adapter"
+import { createClient } from '@supabase/supabase-js'
+import { cookies } from 'next/headers'
 
 type User = {
   wallet: string;
@@ -108,4 +110,49 @@ export const authOptions: NextAuthOptions = {
   pages: {
     signIn: "/auth/signin",
   },
+}
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
+export async function verifyAuth(token: string): Promise<string | null> {
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser(token)
+    
+    if (error || !user) {
+      return null
+    }
+
+    return user.id
+  } catch (error) {
+    console.error('Error verifying auth:', error)
+    return null
+  }
+}
+
+export async function getSession() {
+  const cookieStore = cookies()
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value
+        },
+      },
+    }
+  )
+
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    return session
+  } catch (error) {
+    console.error('Error:', error)
+    return null
+  }
 } 

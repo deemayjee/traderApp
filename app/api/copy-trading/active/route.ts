@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server"
-import { supabaseAdmin } from "@/lib/supabase/server-admin"
+import { createClient } from "@supabase/supabase-js"
 
-export async function GET(request: Request) {
+// Initialize Supabase client
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
+
+export async function GET(req: Request) {
   try {
-    const { searchParams } = new URL(request.url)
-    const userWallet = searchParams.get("userWallet")
-    console.log("Received request for user wallet:", userWallet)
+    const { searchParams } = new URL(req.url)
+    const userWallet = searchParams.get('userWallet')
 
     if (!userWallet) {
       return NextResponse.json(
@@ -14,51 +19,38 @@ export async function GET(request: Request) {
       )
     }
 
-    // Fetch active copy trades with trader information
-    const { data: trades, error } = await supabaseAdmin
-      .from("copy_trades")
-      .select(`
-        id,
-        trader_wallet,
-        allocation,
-        max_slippage,
-        stop_loss,
-        status,
-        traders (
-          name
-        )
-      `)
-      .eq("user_wallet", userWallet)
-      .eq("status", "active")
+    // Set current wallet address for RLS policies
+    const { error: rlsError } = await supabase.rpc('set_current_wallet_address', {
+      wallet_address: userWallet
+    })
 
-    console.log("Database query result:", { trades, error })
-
-    if (error) {
-      console.error("Error fetching active copy trades:", error)
+    if (rlsError) {
+      console.error('Error setting RLS policy:', rlsError)
       return NextResponse.json(
-        { error: "Failed to fetch active copy trades" },
+        { error: "Failed to set wallet permissions" },
         { status: 500 }
       )
     }
 
-    // Transform the data to include trader name
-    const formattedTrades = trades.map((trade: any) => ({
-      id: trade.id,
-      trader_wallet: trade.trader_wallet,
-      trader_name: trade.traders?.name || `Trader ${trade.trader_wallet.slice(0, 4)}...${trade.trader_wallet.slice(-4)}`,
-      allocation: trade.allocation,
-      max_slippage: trade.max_slippage,
-      stop_loss: trade.stop_loss,
-      status: trade.status
-    }))
+    // Get active copy trades
+    const { data: trades, error } = await supabase
+      .from('copy_trades')
+      .select('*')
+      .eq('wallet_address', userWallet)
+      .order('created_at', { ascending: false })
+      .limit(10)
 
-    console.log("Formatted trades response:", formattedTrades)
+    if (error) {
+      console.error('Error fetching copy trades:', error)
+      return NextResponse.json(
+        { error: "Failed to fetch copy trades" },
+        { status: 500 }
+      )
+    }
 
-    return NextResponse.json({
-      trades: formattedTrades
-    })
+    return NextResponse.json({ trades })
   } catch (error) {
-    console.error("Error in active copy trades endpoint:", error)
+    console.error('Error in active copy trades endpoint:', error)
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

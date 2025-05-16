@@ -346,15 +346,6 @@ export default function PortfolioPage() {
           <h1 className="text-2xl font-bold">Portfolio</h1>
           <p className="text-sm text-gray-500">Track your crypto assets and performance</p>
         </div>
-
-        <div className="flex items-center space-x-3">
-          <Button variant="outline" className="border-gray-200">
-            <Download size={16} className="mr-2" /> Export
-          </Button>
-          <Button className="">
-            <Plus size={16} className="mr-2" /> Add Asset
-          </Button>
-        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
@@ -482,14 +473,6 @@ export default function PortfolioPage() {
                     </div>
                   </div>
                 ))}
-              </div>
-              <div className="flex justify-center mt-6 space-x-3">
-                <Button className="bg-black text-white hover:bg-gray-800">
-                  <Upload size={16} className="mr-2" /> Deposit
-                </Button>
-                <Button variant="outline" className="border-gray-200">
-                  <Download size={16} className="mr-2" /> Withdraw
-                </Button>
               </div>
             </CardContent>
           </Card>

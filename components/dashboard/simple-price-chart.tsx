@@ -40,6 +40,7 @@ interface SimplePriceChartProps {
 export function SimplePriceChart({ selectedCoin, timeRange, onTimeRangeChange }: SimplePriceChartProps) {
   const [priceData, setPriceData] = useState<number[]>([])
   const [labels, setLabels] = useState<string[]>([])
+  const [volumesData, setVolumesData] = useState<number[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -114,6 +115,7 @@ export function SimplePriceChart({ selectedCoin, timeRange, onTimeRangeChange }:
 
         setPriceData(formattedPrices)
         setLabels(formattedLabels)
+        setVolumesData(volumes.map(([timestamp, volume]: [number, number]) => volume))
         setError(null)
       } catch (err) {
         console.error("Error fetching coin data:", err)
@@ -319,11 +321,11 @@ export function SimplePriceChart({ selectedCoin, timeRange, onTimeRangeChange }:
             { label: "Open", value: formatPrice(priceData[0]) },
             { label: "High", value: formatPrice(Math.max(...priceData)) },
             { label: "Low", value: formatPrice(Math.min(...priceData)) },
-            { label: "Volume", value: "N/A" },
+            { label: "Volume", value: volumesData.length > 0 ? volumesData[volumesData.length - 1].toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : "N/A" },
           ].map((item, index) => (
             <div key={index} className="bg-muted/50 rounded-md p-3 border border-border">
               <p className="text-xs text-muted-foreground">{item.label}</p>
-              <p className="text-sm font-medium text-foreground">${item.value}</p>
+              <p className="text-sm font-medium text-foreground">{item.label === "Volume" ? "$" : "$"}{item.value}</p>
             </div>
           ))}
         </div>

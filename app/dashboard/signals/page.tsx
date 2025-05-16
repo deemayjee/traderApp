@@ -432,24 +432,10 @@ const SignalsPage: FC = () => {
                 />
               </div>
             </CardHeader>
-            <CardContent className="pt-4">
+            <CardContent>
               {filteredSignals.length === 0 ? (
                 <div className="text-center py-8">
-                  <p className="text-muted-foreground mb-2">No signals match your current filters.</p>
-                  <Button
-                    variant="outline"
-                    className="mt-2 border-border"
-                    onClick={() =>
-                      setFilters({
-                        cryptos: [],
-                        confidence: null,
-                        timeframe: null,
-                        agents: [],
-                      })
-                    }
-                  >
-                    Clear Filters
-                  </Button>
+                  <p className="text-muted-foreground">No signals found</p>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -474,27 +460,13 @@ const SignalsPage: FC = () => {
                           </div>
                         </div>
                         <div className="flex items-center space-x-2">
-                          <Badge
-                            className={`
-                              ${
-                                signal.result === "Success"
-                                  ? "bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-300"
-                                  : signal.result === "Failure"
-                                    ? "bg-red-100 text-red-600 dark:bg-red-900 dark:text-red-300"
-                                    : "bg-muted text-muted-foreground"
-                              }
-                            `}
-                          >
-                            {signal.result}
-                          </Badge>
                           <Button
                             variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0 text-muted-foreground hover:text-red-600"
+                            size="icon"
+                            className="h-8 w-8"
                             onClick={() => handleDeleteSignal(signal.id)}
                           >
                             <Trash2 className="h-4 w-4" />
-                            <span className="sr-only">Delete signal</span>
                           </Button>
                         </div>
                       </div>
@@ -534,70 +506,6 @@ const SignalsPage: FC = () => {
               <Button variant="outline" className="w-full mt-4 border-border">
                 View All Signals
               </Button>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-background border-border">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-xl">Signal Performance</CardTitle>
-                <Tabs defaultValue="week">
-                  <TabsList className="bg-muted border border-border">
-                    <TabsTrigger value="week" className="data-[state=active]:bg-background">
-                      Week
-                    </TabsTrigger>
-                    <TabsTrigger value="month" className="data-[state=active]:bg-background">
-                      Month
-                    </TabsTrigger>
-                    <TabsTrigger value="year" className="data-[state=active]:bg-background">
-                      Year
-                    </TabsTrigger>
-                  </TabsList>
-                </Tabs>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-4">
-              <div className="h-[300px] w-full bg-card rounded-md relative overflow-hidden border border-border">
-                <div className="absolute inset-0">
-                  <svg viewBox="0 0 100 40" className="h-full w-full">
-                    <path
-                      d="M0,20 Q10,18 20,25 T40,15 T60,20 T80,10 T100,15"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="0.5"
-                    />
-                    <path
-                      d="M0,40 L0,20 Q10,18 20,25 T40,15 T60,20 T80,10 T100,15 L100,40 Z"
-                      fill="url(#gradient)"
-                      opacity="0.1"
-                    />
-                    <defs>
-                      <linearGradient id="gradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                        <stop offset="0%" stopColor="currentColor" />
-                        <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
-                      </linearGradient>
-                    </defs>
-                  </svg>
-                </div>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <p className="text-muted-foreground text-sm">Signal performance chart will be displayed here</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4 mt-4">
-                <div className="bg-card rounded-md p-3 border border-border">
-                  <p className="text-xs text-muted-foreground">Success Rate</p>
-                  <p className="text-lg font-medium text-green-600">78%</p>
-                </div>
-                <div className="bg-card rounded-md p-3 border border-border">
-                  <p className="text-xs text-muted-foreground">Avg. Profit</p>
-                  <p className="text-lg font-medium">+3.2%</p>
-                </div>
-                <div className="bg-card rounded-md p-3 border border-border">
-                  <p className="text-xs text-muted-foreground">Total Signals</p>
-                  <p className="text-lg font-medium">{signals.length}</p>
-                </div>
-              </div>
             </CardContent>
           </Card>
         </div>

@@ -50,6 +50,11 @@ export function DashboardSidebar() {
       icon: <Brain className="h-5 w-5" />,
     },
     {
+      title: "Agent Training",
+      href: "/ai-agents/train",
+      icon: <Brain className="h-5 w-5" />,
+    },
+    {
       title: "Settings",
       href: "/dashboard/settings",
       icon: <Settings className="h-5 w-5" />,
