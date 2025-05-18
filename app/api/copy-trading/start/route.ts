@@ -5,6 +5,7 @@ import { createClient } from "@supabase/supabase-js"
 import { getRaydiumQuote, createRaydiumSwapTransaction } from "@/lib/api/raydium"
 import { AIWalletService } from "@/lib/services/ai-wallet-service"
 import * as nacl from "tweetnacl"
+import { executeAIWalletCopyTrade } from "@/lib/services/ai-copy-trade"
 
 // Initialize Solana connection
 const connection = new Connection(process.env.NEXT_PUBLIC_RPC_URL || "https://api.mainnet-beta.solana.com")
@@ -247,7 +248,7 @@ async function executeTrade(
     console.log("Liquidity check results:", liquidityInfo)
 
     // Verify sufficient liquidity
-    if (params.inputAmount > liquidityInfo.availableLiquidity) {
+    if (params.inputAmount > liquidityInfo.availableLiquidity * 1.0001) { // Add 0.01% buffer for floating-point precision
       throw new Error(`Insufficient liquidity. Available: ${liquidityInfo.availableLiquidity}, Required: ${params.inputAmount}`)
     }
 
@@ -378,9 +379,9 @@ async function executeTrade(
       // Use the versioned transaction directly
       transaction = VersionedTransaction.deserialize(Buffer.from(swapData.swapTransaction, "base64"))
 
-      // Calculate price from quote
+      // Calculate price from quote (normalize both to token units)
       tradeResult = {
-        price: Number(quoteData.outAmount) / inputAmount,
+        price: (Number(quoteData.outAmount) / Math.pow(10, params.outputDecimals)) / (inputAmount / Math.pow(10, params.inputDecimals)),
         priceImpact: Number(quoteData.priceImpactPct) / 100,
         liquidityInfo: {
           totalLiquidity: Number(quoteData.inAmount) / Math.pow(10, params.inputDecimals),
@@ -564,8 +565,6 @@ async function executeTrade(
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    console.log("Received request body:", body)
-
     const {
       inputTokenAddress,
       outputTokenAddress,
@@ -579,201 +578,41 @@ export async function POST(req: Request) {
     } = body
 
     // Validate input
-    if (!inputTokenAddress || !outputTokenAddress || !inputTokenSymbol || !outputTokenSymbol || 
-        !inputAmount || !inputDecimals || !outputDecimals || !aiAmount || !userWallet) {
-      console.error("Missing required fields:", {
+    if (!inputTokenAddress || !outputTokenAddress || !inputAmount || !userWallet) {
+      return NextResponse.json(
+        { error: "Missing required parameters" },
+        { status: 400 }
+      )
+    }
+
+    // Get a fresh blockhash
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
+
+    // Create the user's transaction
+    const transaction = await executeTrade(
+      userWallet,
+      {
         inputTokenAddress,
         outputTokenAddress,
-        inputTokenSymbol,
-        outputTokenSymbol,
         inputAmount,
         inputDecimals,
-        outputDecimals,
-        aiAmount,
-        userWallet
-      })
-      return NextResponse.json(
-        { error: "Missing required fields" },
-        { status: 400 }
-      )
+        outputDecimals
+      },
+      false // isAITrade is always false for token sales
+    )
+
+    if (!transaction.transaction) {
+      throw new Error("Failed to create transaction")
     }
 
-    // Check wallet balance first
-    const userWalletPubkey = new PublicKey(userWallet)
-    const userBalance = await connection.getBalance(userWalletPubkey)
-    const minRequiredBalance = LAMPORTS_PER_SOL * 0.01 // 0.01 SOL minimum required
-
-    if (userBalance < minRequiredBalance) {
-      return NextResponse.json(
-        { 
-          error: "Insufficient balance",
-          details: {
-            required: minRequiredBalance / LAMPORTS_PER_SOL,
-            available: userBalance / LAMPORTS_PER_SOL
-          }
-        },
-        { status: 400 }
-      )
-    }
-
-    // Get AI wallet and check its balance
-    const { data: aiWallet, error: aiWalletError } = await supabase
-      .from('ai_wallets')
-      .select('ai_wallet_address')
-      .eq('wallet_address', userWallet)
-      .single()
-
-    if (aiWalletError) {
-      console.error("Error fetching AI wallet:", aiWalletError)
-      return NextResponse.json(
-        { error: "Failed to fetch AI wallet" },
-        { status: 500 }
-      )
-    }
-
-    const aiWalletPubkey = new PublicKey(aiWallet.ai_wallet_address)
-    const aiBalance = await connection.getBalance(aiWalletPubkey)
-    const minAiBalance = LAMPORTS_PER_SOL * 0.01 // 0.01 SOL minimum required for AI wallet
-
-    if (aiBalance < minAiBalance) {
-      return NextResponse.json(
-        { 
-          error: "AI wallet has insufficient balance",
-          details: {
-            required: minAiBalance / LAMPORTS_PER_SOL,
-            available: aiBalance / LAMPORTS_PER_SOL,
-            aiWalletAddress: aiWallet.ai_wallet_address
-          }
-        },
-        { status: 400 }
-      )
-    }
-
-    // Validate amounts
-    if (isNaN(inputAmount) || inputAmount <= 0) {
-      return NextResponse.json(
-        { error: "Invalid input amount" },
-        { status: 400 }
-      )
-    }
-
-    if (isNaN(aiAmount) || aiAmount <= 0) {
-      return NextResponse.json(
-        { error: "Invalid AI amount" },
-        { status: 400 }
-      )
-    }
-
-    // Calculate dates
-    const startDate = new Date()
-    const endDate = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000) // 10 days from now
-
-    try {
-      // Execute user's trade
-      console.log("Executing user's trade...")
-      const userTrade = await executeTrade(
-        userWallet,
-        {
-          inputTokenAddress,
-          outputTokenAddress,
-          inputAmount,
-          inputDecimals,
-          outputDecimals
-        }
-      )
-      console.log("User trade executed:", userTrade)
-
-      // Execute AI's trade
-      console.log("Executing AI's trade...")
-      const aiTrade = await executeTrade(
-        userWallet, // Pass user's wallet to get their AI wallet
-        {
-          inputTokenAddress,
-          outputTokenAddress,
-          inputAmount: aiAmount,
-          inputDecimals,
-          outputDecimals
-        },
-        true
-      )
-      console.log("AI trade executed:", aiTrade)
-
-      // Store the copy trade in the database
-      console.log("Storing copy trade in database...")
-      
-      // First, get or create the user
-      const { data: user, error: userError } = await supabase
-        .from("users")
-        .select("id")
-        .eq("wallet_address", userWallet)
-        .single()
-
-      if (userError) {
-        console.error("Error finding user:", userError)
-        return NextResponse.json(
-          { error: "Failed to find user" },
-          { status: 500 }
-        )
-      }
-
-      // Now insert the copy trade
-      const { data: copyTrade, error: dbError } = await supabase
-        .from("copy_trades")
-        .insert({
-          user_id: user.id,
-          wallet_address: userWallet,
-          ai_wallet_address: aiWallet.ai_wallet_address,
-          token_address: outputTokenAddress,
-          token_symbol: outputTokenSymbol,
-          user_amount: inputAmount,
-          ai_amount: aiAmount,
-          lock_period: 10,
-          start_date: startDate.toISOString(),
-          end_date: endDate.toISOString(),
-          status: "active",
-          user_trade_signature: userTrade.signature,
-          ai_trade_signature: aiTrade.signature,
-          entry_price: userTrade.price
-        })
-        .select()
-        .single()
-
-      if (dbError) {
-        console.error("Database error:", dbError)
-        return NextResponse.json(
-          { error: "Failed to store copy trade" },
-          { status: 500 }
-        )
-      }
-
-      return NextResponse.json({
-        id: copyTrade.id,
-        message: "Copy trade started successfully",
-        details: {
-          inputTokenAddress,
-          outputTokenAddress,
-          inputTokenSymbol,
-          outputTokenSymbol,
-          inputAmount,
-          aiAmount,
-          userWallet,
-          lockPeriod: 10,
-          startDate: startDate.toISOString(),
-          endDate: endDate.toISOString(),
-          userTradeSignature: userTrade.signature,
-          aiTradeSignature: aiTrade.signature,
-          entryPrice: userTrade.price,
-          priceImpact: userTrade.priceImpact,
-          liquidityInfo: userTrade.liquidityInfo
-        }
-      })
-    } catch (tradeError) {
-      console.error("Trade execution error:", tradeError)
-      return NextResponse.json(
-        { error: tradeError instanceof Error ? tradeError.message : "Failed to execute trades" },
-        { status: 500 }
-      )
-    }
+    // Return the transaction for the user to sign
+    return NextResponse.json({
+      transaction: transaction.transaction,
+      blockhash,
+      lastValidBlockHeight,
+      type: transaction.type,
+      amount: inputAmount
+    })
   } catch (error) {
     console.error("Error starting copy trade:", error)
     return NextResponse.json(
@@ -781,4 +620,6 @@ export async function POST(req: Request) {
       { status: 500 }
     )
   }
-} 
+}
+
+export { executeTrade } 

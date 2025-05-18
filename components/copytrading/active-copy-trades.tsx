@@ -1,12 +1,15 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useToast } from "@/components/ui/use-toast"
 import { useWalletAuth } from "@/components/auth/wallet-context"
 import { Loader2, AlertTriangle, CheckCircle2, XCircle, Copy } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { SellToken } from "@/components/copytrading/sell-token"
+import { useWalletTokens } from "@/hooks/use-wallet-tokens"
 
 interface CopyTrade {
   id: string
@@ -35,8 +38,17 @@ interface CopyTrade {
 export function ActiveCopyTrades() {
   const [trades, setTrades] = useState<CopyTrade[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [selectedTrade, setSelectedTrade] = useState<CopyTrade | null>(null)
+  const [showSellModal, setShowSellModal] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [sortBy, setSortBy] = useState<'date' | 'amount' | 'status'>('date')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
+  const [showAll, setShowAll] = useState(false)
   const { toast } = useToast()
   const { user } = useWalletAuth()
+  const { assets: walletAssets } = useWalletTokens();
+
+  const ITEMS_PER_PAGE = 3
 
   useEffect(() => {
     const fetchTrades = async () => {
@@ -118,6 +130,31 @@ export function ActiveCopyTrades() {
     }
   }
 
+  const sortedTrades = useMemo(() => {
+    return [...trades].sort((a, b) => {
+      if (sortBy === 'date') {
+        return sortOrder === 'desc' 
+          ? new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          : new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      }
+      if (sortBy === 'amount') {
+        return sortOrder === 'desc' 
+          ? b.user_amount - a.user_amount
+          : a.user_amount - b.user_amount
+      }
+      return sortOrder === 'desc'
+        ? b.status.localeCompare(a.status)
+        : a.status.localeCompare(b.status)
+    })
+  }, [trades, sortBy, sortOrder])
+
+  const paginatedTrades = useMemo(() => {
+    if (showAll) return sortedTrades
+    return sortedTrades.slice(0, currentPage * ITEMS_PER_PAGE)
+  }, [sortedTrades, currentPage, showAll])
+
+  const hasMore = !showAll && paginatedTrades.length < trades.length
+
   if (isLoading) {
     return (
       <Card className="w-full">
@@ -148,123 +185,152 @@ export function ActiveCopyTrades() {
   }
 
   return (
-    <Card className="w-full">
-      <CardHeader>
-        <CardTitle>Active Copy Trades</CardTitle>
-        <CardDescription>Your current copy trading activities</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          {trades.map((trade) => (
-            <div
-              key={trade.id}
-              className="flex flex-col space-y-2 p-4 rounded-lg border bg-card"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  {getStatusBadge(trade.status)}
-                  <span className="text-sm text-muted-foreground">
-                    {formatDate(trade.created_at)}
-                  </span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  {trade.user_trade_signature && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => window.open(`https://solscan.io/tx/${trade.user_trade_signature}`, '_blank')}
-                    >
-                      View User Transaction
-                    </Button>
-                  )}
-                  {trade.ai_trade_signature && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => window.open(`https://solscan.io/tx/${trade.ai_trade_signature}`, '_blank')}
-                    >
-                      View AI Transaction
-                    </Button>
-                  )}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4 mt-4">
-                <div>
-                  <p className="text-sm text-muted-foreground">User Wallet</p>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 p-2 bg-muted rounded-md overflow-x-auto break-all max-w-[180px]">
-                      {truncateAddress(trade.wallet_address)}
-                    </code>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => copyToClipboard(trade.wallet_address)}
-                    >
-                      <Copy className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">AI Wallet</p>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 p-2 bg-muted rounded-md overflow-x-auto break-all max-w-[180px]">
-                      {truncateAddress(trade.ai_wallet_address)}
-                    </code>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => copyToClipboard(trade.ai_wallet_address)}
-                    >
-                      <Copy className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm font-medium">Token</p>
-                  <p className="text-sm text-muted-foreground">
-                    {trade.token_symbol}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium">Amount</p>
-                  <p className="text-sm text-muted-foreground">
-                    {formatAmount(trade.user_amount)} SOL
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium">AI Amount</p>
-                  <p className="text-sm text-muted-foreground">
-                    {formatAmount(trade.ai_amount)} SOL
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium">Entry Price</p>
-                  <p className="text-sm text-muted-foreground">
-                    {trade.entry_price ? formatAmount(trade.entry_price) : 'N/A'}
-                  </p>
-                </div>
-              </div>
-
-              {trade.status === 'completed' && trade.end_date && (
-                <div className="flex items-center space-x-2 text-sm text-green-500">
-                  <CheckCircle2 className="h-4 w-4" />
-                  <span>Completed at {formatDate(trade.end_date)}</span>
-                </div>
-              )}
-
-              {trade.status === 'cancelled' && (
-                <div className="flex items-center space-x-2 text-sm text-red-500">
-                  <XCircle className="h-4 w-4" />
-                  <span>Trade cancelled</span>
-                </div>
-              )}
+    <>
+      <Card className="w-full">
+        <CardHeader>
+          <div className="flex justify-between items-center">
+            <div>
+              <CardTitle>Active Copy Trades</CardTitle>
+              <CardDescription>Your current copy trading activities</CardDescription>
             </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+            <div className="flex items-center space-x-2">
+              <select
+                className="text-sm border rounded-md px-2 py-1"
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as 'date' | 'amount' | 'status')}
+              >
+                <option value="date">Sort by Date</option>
+                <option value="amount">Sort by Amount</option>
+                <option value="status">Sort by Status</option>
+              </select>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
+              >
+                {sortOrder === 'desc' ? '↓' : '↑'}
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {paginatedTrades.map((trade) => (
+              <div
+                key={trade.id}
+                className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
+              >
+                <div className="flex items-center space-x-4 flex-1">
+                  <div className="flex-shrink-0">
+                    {getStatusBadge(trade.status)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium truncate">{trade.token_symbol}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {formatDate(trade.created_at)}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-medium">{formatAmount(trade.user_amount)} SOL</p>
+                        <p className="text-sm text-muted-foreground">
+                          AI: {formatAmount(trade.ai_amount)} SOL
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center space-x-2 ml-4">
+                  {trade.status === 'active' && (
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedTrade(trade)
+                        setShowSellModal(true)
+                      }}
+                    >
+                      Sell
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {hasMore && (
+            <div className="mt-4 flex justify-center">
+              <Button
+                variant="outline"
+                onClick={() => setCurrentPage(prev => prev + 1)}
+              >
+                Load More
+              </Button>
+            </div>
+          )}
+
+          {!showAll && trades.length > ITEMS_PER_PAGE && (
+            <div className="mt-4 flex justify-center">
+              <Button
+                variant="ghost"
+                onClick={() => setShowAll(true)}
+              >
+                View All ({trades.length})
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={showSellModal} onOpenChange={setShowSellModal}>
+        <DialogContent className="sm:max-w-[400px] p-0">
+          <DialogHeader className="px-6 pt-6 pb-2">
+            <DialogTitle>Sell {selectedTrade?.token_symbol}</DialogTitle>
+            <CardDescription>
+              You can sell your {selectedTrade?.token_symbol} tokens for SOL below.
+            </CardDescription>
+          </DialogHeader>
+          {selectedTrade && (() => {
+            const tokenAsset = walletAssets.find(
+              asset => asset.mint.toLowerCase() === selectedTrade.token_address.toLowerCase()
+            );
+            const sellTokenElement = (
+              <SellToken
+                tokenBalance={{
+                  mint: selectedTrade.token_address,
+                  amount: tokenAsset ? tokenAsset.amount : 0,
+                  decimals: tokenAsset ? tokenAsset.decimals : 9,
+                  symbol: selectedTrade.token_symbol
+                }}
+                hideTitle
+                hideDescription
+              />
+            );
+            return (
+              <div className="flex flex-col gap-0">
+                <div className="px-6 py-4">
+                  {!tokenAsset && (
+                    <div className="mb-2 text-sm text-red-500">
+                      Warning: You do not have any {selectedTrade.token_symbol} tokens in your wallet.
+                    </div>
+                  )}
+                  {sellTokenElement}
+                </div>
+                <div className="flex gap-2 px-6 pb-6">
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => setShowSellModal(false)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+    </>
   )
 } 

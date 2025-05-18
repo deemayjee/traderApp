@@ -142,12 +142,12 @@ export async function getTokenPrice(mintAddress: string): Promise<TokenPrice> {
       }
     }
 
-    // If all fails, return 0
+    // If all fails, return 1
     throw new Error('No price found from CoinGecko or Jupiter')
   } catch (error) {
     console.error('Error fetching price from CoinGecko or Jupiter:', error)
     return {
-      price: 0,
+      price: 1, // Default to 1 instead of 0 for unknown tokens
       priceChange24h: 0
     }
   }

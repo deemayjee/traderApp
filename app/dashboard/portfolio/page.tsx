@@ -442,34 +442,18 @@ export default function PortfolioPage() {
             <CardContent>
               <div className="space-y-4">
                 {filteredAssets.map((asset) => (
-                  <div key={asset.mint} className="space-y-2">
+                  <div key={asset.mint} className="space-y-4">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <img
-                          src={asset.metadata?.image || "/placeholder.svg"}
-                          alt={asset.metadata?.name || "Unknown Token"}
-                          className="w-8 h-8 rounded-full"
-                        />
-                        <div>
-                          <p className="font-medium">{asset.metadata?.name}</p>
-                          <p className="text-xs text-gray-500">{asset.formattedAmount}</p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-medium">{asset.formattedValue}</p>
-                        <p className={`text-xs flex items-center justify-end ${asset.positive ? "text-green-600" : "text-red-600"}`}>
-                          {asset.positive ? (
-                            <ArrowUp size={12} className="mr-1" />
-                          ) : (
-                            <ArrowDown size={12} className="mr-1" />
-                          )}
-                          {asset.change}
+                      <div>
+                        <h3 className="font-medium">{asset.metadata.name}</h3>
+                        <p className="text-sm text-muted-foreground">
+                          {asset.formattedAmount} (${asset.formattedValue})
                         </p>
                       </div>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Progress value={asset.allocation || 0} className="h-1" />
-                      <span className="text-xs text-gray-500">{(asset.allocation || 0).toFixed(1)}%</span>
+                      <div className="text-right">
+                        <p className={`font-medium ${asset.positive ? 'text-green-500' : 'text-red-500'}`}>{asset.change}</p>
+                        <p className="text-sm text-muted-foreground">{asset.allocation.toFixed(2)}% of portfolio</p>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -502,3 +486,4 @@ export default function PortfolioPage() {
     </>
   )
 }
+

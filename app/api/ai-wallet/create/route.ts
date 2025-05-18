@@ -55,6 +55,21 @@ export async function POST(req: Request) {
       )
     }
 
+    // Fetch user by wallet_address to get user_id
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('wallet_address', userWallet)
+      .single()
+
+    if (userError || !user) {
+      console.error('Error fetching user for AI wallet:', userError)
+      return NextResponse.json(
+        { error: "Failed to fetch user for AI wallet" },
+        { status: 500 }
+      )
+    }
+
     // Generate new keypair
     const keypair = Keypair.generate()
     const privateKey = Buffer.from(keypair.secretKey).toString('base64')
@@ -66,8 +81,10 @@ export async function POST(req: Request) {
     const { data: wallet, error: insertError } = await supabase
       .from('ai_wallets')
       .insert({
+        user_id: user.id,
         wallet_address: userWallet,
         ai_wallet_address: keypair.publicKey.toString(),
+        public_key: keypair.publicKey.toString(),
         encrypted_private_key: encryptedPrivateKey
       })
       .select()

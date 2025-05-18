@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useWalletAuth } from "@/components/auth/wallet-context"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -13,6 +13,8 @@ import { AlertCircle, Loader2 } from "lucide-react"
 import { AIWalletCreator } from "@/components/copytrading/ai-wallet-creator"
 import { ActiveCopyTrades } from "@/components/copytrading/active-copy-trades"
 import { CopyTradingStats } from "@/components/copytrading/copytrading-stats"
+import { Connection, clusterApiUrl } from '@solana/web3.js';
+import { VersionedTransaction } from '@solana/web3.js';
 
 interface CopyTrade {
   id: string
@@ -34,14 +36,43 @@ interface TokenMetadata {
 
 export default function CopyTradingPage() {
   const { user } = useWalletAuth()
+  const connection = useMemo(() => new Connection(
+    process.env.NEXT_PUBLIC_SOLANA_RPC_URL || clusterApiUrl("mainnet-beta"),
+    { commitment: 'confirmed' }
+  ), []);
   const [tokenAddress, setTokenAddress] = useState("")
   const [tokenSymbol, setTokenSymbol] = useState("")
   const [tokenName, setTokenName] = useState("")
   const [isLoadingToken, setIsLoadingToken] = useState(false)
   const [userAmount, setUserAmount] = useState("")
   const [aiAmount, setAiAmount] = useState("0.5") // Default AI amount
+  const [slippage, setSlippage] = useState("1") // Default slippage of 1%
   const [showConfirmation, setShowConfirmation] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [showSuccess, setShowSuccess] = useState(false)
+  const [processingMessage, setProcessingMessage] = useState("")
+  const [tradeStatus, setTradeStatus] = useState<"user" | "ai" | "complete" | "error">("user")
+  const [errorMessage, setErrorMessage] = useState("")
+
+  const checkTransactionStatus = async (signature: string) => {
+    try {
+      const response = await fetch(`/api/transaction/status?signature=${signature}`)
+      const data = await response.json()
+      
+      if (data.status === 'confirmed') {
+        return true
+      } else if (data.status === 'failed') {
+        throw new Error('Transaction failed')
+      } else {
+        // If still processing, wait and check again
+        await new Promise(resolve => setTimeout(resolve, 2000))
+        return checkTransactionStatus(signature)
+      }
+    } catch (error) {
+      console.error('Error checking transaction status:', error)
+      throw error
+    }
+  }
 
   const fetchTokenMetadata = async (address: string) => {
     if (!address) return
@@ -110,12 +141,24 @@ export default function CopyTradingPage() {
   }
 
   const handleConfirmCopyTrade = async () => {
+    if (!user?.wallet?.address) {
+      toast.error("Please connect your wallet first")
+      return
+    }
+
     setIsProcessing(true)
+    setProcessingMessage("Preparing your trade...")
+    setTradeStatus("user")
+    setErrorMessage("")
+    
     try {
+      // Get a fresh blockhash first
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed')
+      
       const response = await fetch("/api/copy-trading/start", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
+          "Content-Type": "application/json"
         },
         body: JSON.stringify({
           inputTokenAddress: "So11111111111111111111111111111111111111112", // SOL
@@ -123,28 +166,135 @@ export default function CopyTradingPage() {
           inputTokenSymbol: "SOL",
           outputTokenSymbol: tokenSymbol,
           inputAmount: parseFloat(userAmount),
-          inputDecimals: 9,
-          outputDecimals: 9,
+          inputDecimals: 9, // SOL decimals
+          outputDecimals: 9, // Default to 9 for most tokens
           aiAmount: parseFloat(aiAmount),
-          userWallet: user?.wallet?.address,
-        }),
+          slippage: parseFloat(slippage),
+          userWallet: user.wallet.address,
+          blockhash,
+          lastValidBlockHeight
+        })
       })
 
       const data = await response.json()
 
       if (!response.ok) {
+        // Handle specific error cases
+        if (data.error?.includes("Price impact too high")) {
+          toast.error("Trade amount too large. Please try a smaller amount to reduce price impact.")
+          return
+        }
+        if (data.error?.includes("Insufficient liquidity")) {
+          toast.error("Not enough liquidity for this trade. Please try a smaller amount.")
+          return
+        }
         throw new Error(data.error || "Failed to start copy trade")
       }
 
-      toast.success("Copy trade started successfully!")
-      setShowConfirmation(false)
-      
-      // Reset form
-      setTokenAddress("")
-      setTokenSymbol("")
-      setUserAmount("")
+      // If we got a transaction back, it needs to be signed by the user
+      if (data.transaction) {
+        setProcessingMessage("Please approve the transaction in your wallet")
+        
+        // Deserialize the transaction
+        const transaction = VersionedTransaction.deserialize(
+          Buffer.from(data.transaction, 'base64')
+        )
+
+        // Get the wallet adapter from Privy
+        const { solana } = window as any
+        if (!solana?.isPhantom) {
+          throw new Error("Phantom wallet not found")
+        }
+
+        // Sign the transaction using Phantom
+        const signedTransaction = await solana.signTransaction(transaction)
+        
+        // Send the signed transaction
+        const signature = await connection.sendRawTransaction(signedTransaction.serialize())
+        
+        setProcessingMessage("Processing your trade...")
+        
+        try {
+          // Wait for confirmation with a longer timeout and better error handling
+          const confirmation = await Promise.race([
+            connection.confirmTransaction({
+              signature,
+              blockhash,
+              lastValidBlockHeight
+            }, 'confirmed'),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Transaction timeout')), 30000)
+            )
+          ]) as { value: { err: any } }
+
+          if (confirmation.value.err) {
+            // Check for specific Jupiter errors
+            const errorCode = confirmation.value.err.toString()
+            if (errorCode.includes("0x1771")) {
+              throw new Error("Price impact too high. Please try a smaller amount.")
+            }
+            throw new Error("Transaction failed")
+          }
+
+          setTradeStatus("ai")
+          setProcessingMessage("Starting AI copy trade...")
+          
+          // Now that the user's transaction is confirmed, we can proceed with the copy trade
+          const copyTradeResponse = await fetch("/api/copy-trading/confirm", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              signature,
+              userWallet: user.wallet.address,
+              inputTokenAddress: "So11111111111111111111111111111111111111112",
+              outputTokenAddress: tokenAddress,
+              inputTokenSymbol: "SOL",
+              outputTokenSymbol: tokenSymbol,
+              inputAmount: parseFloat(userAmount),
+              inputDecimals: 9,
+              outputDecimals: 9,
+              aiAmount: parseFloat(aiAmount),
+              slippage: parseFloat(slippage)
+            })
+          })
+
+          const copyTradeData = await copyTradeResponse.json()
+          
+          if (!copyTradeResponse.ok) {
+            setTradeStatus("error")
+            setErrorMessage("AI copy trade failed. Your trade was successful, but the AI trade could not be completed. Please try again later.")
+            throw new Error(copyTradeData.error || "Failed to complete copy trade")
+          }
+
+          // Show success state
+          setTradeStatus("complete")
+          setIsProcessing(false)
+          setShowConfirmation(false)
+          setShowSuccess(true)
+          
+          // Reset form
+          setTokenAddress("")
+          setTokenSymbol("")
+          setUserAmount("")
+          setAiAmount("0.5")
+          setSlippage("1")
+        } catch (error: unknown) {
+          if (error instanceof Error && error.message === 'Transaction timeout') {
+            setTradeStatus("error")
+            setErrorMessage("Transaction is taking longer than expected. Please check your wallet for confirmation.")
+          } else {
+            setTradeStatus("error")
+            setErrorMessage(error instanceof Error ? error.message : "Failed to process trade")
+          }
+          console.error("Error in transaction confirmation:", error)
+        }
+      }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to start copy trade")
+      console.error("Error in handleConfirmCopyTrade:", error)
+      setTradeStatus("error")
+      setErrorMessage(error instanceof Error ? error.message : "Failed to start copy trade")
     } finally {
       setIsProcessing(false)
     }
@@ -220,6 +370,21 @@ export default function CopyTradingPage() {
                 />
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="slippage">Slippage Tolerance (%)</Label>
+                <Input
+                  id="slippage"
+                  type="number"
+                  value={slippage}
+                  onChange={(e) => setSlippage(e.target.value)}
+                  placeholder="Enter slippage tolerance"
+                  min="0.1"
+                  max="100"
+                  step="0.1"
+                />
+                <p className="text-sm text-muted-foreground">Default: 1%. Higher values may result in worse prices but higher success rate.</p>
+              </div>
+
               <Button 
                 className="w-full" 
                 onClick={handleStartCopyTrade}
@@ -234,6 +399,63 @@ export default function CopyTradingPage() {
         </div>
       </div>
 
+      {/* Loading Overlay */}
+      <Dialog open={isProcessing} onOpenChange={() => {}}>
+        <DialogContent className="sm:max-w-md">
+          <div className="flex flex-col items-center justify-center space-y-4 py-4">
+            <Loader2 className="h-12 w-12 animate-spin text-primary" />
+            <p className="text-lg font-medium">{processingMessage}</p>
+            {tradeStatus === "error" && (
+              <div className="mt-4 text-center">
+                <p className="text-red-500 font-medium">Error</p>
+                <p className="text-sm text-muted-foreground">{errorMessage}</p>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Success Dialog */}
+      <Dialog open={showSuccess} onOpenChange={setShowSuccess}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-center text-2xl">Trade Successful!</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col items-center justify-center space-y-4 py-4">
+            <div className="rounded-full bg-green-100 p-3">
+              <svg
+                className="h-8 w-8 text-green-600"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+            </div>
+            <div className="text-center space-y-2">
+              <p className="text-lg font-medium">Your trade has been completed successfully!</p>
+              {tradeStatus === "complete" ? (
+                <p className="text-muted-foreground">The AI copy trade has also been initiated.</p>
+              ) : (
+                <p className="text-yellow-600">Note: Your trade was successful, but the AI copy trade could not be completed. You can try again later.</p>
+              )}
+            </div>
+            <Button
+              className="w-full"
+              onClick={() => setShowSuccess(false)}
+            >
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Existing Confirmation Dialog */}
       <Dialog open={showConfirmation} onOpenChange={setShowConfirmation}>
         <DialogContent>
           <DialogHeader>
@@ -258,6 +480,9 @@ export default function CopyTradingPage() {
                 </p>
                 <p className="text-sm">
                   <span className="text-muted-foreground">AI Copy Amount:</span> {aiAmount} SOL
+                </p>
+                <p className="text-sm">
+                  <span className="text-muted-foreground">Slippage Tolerance:</span> {slippage}%
                 </p>
               </div>
             </div>

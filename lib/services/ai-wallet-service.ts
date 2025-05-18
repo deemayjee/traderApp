@@ -97,6 +97,18 @@ export class AIWalletService {
         throw new Error('Failed to set wallet permissions')
       }
 
+      // Fetch user by wallet_address to get user_id
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('wallet_address', userWallet)
+        .single()
+
+      if (userError || !user) {
+        console.error('Error fetching user for AI wallet:', userError)
+        throw new Error('Failed to fetch user for AI wallet')
+      }
+
       const keypair = Keypair.generate()
       const privateKey = Buffer.from(keypair.secretKey).toString('base64')
       const encryptedPrivateKey = await encrypt(privateKey)
@@ -104,6 +116,7 @@ export class AIWalletService {
       const { data: wallet, error: insertError } = await supabase
         .from('ai_wallets')
         .insert({
+          user_id: user.id, // Always provide user_id
           wallet_address: userWallet,
           ai_wallet_address: keypair.publicKey.toString(),
           encrypted_private_key: encryptedPrivateKey
