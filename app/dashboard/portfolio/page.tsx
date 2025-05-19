@@ -10,7 +10,7 @@ import { ArrowUp, ArrowDown, Plus, Download, Upload, BarChart3, PieChart as PieC
 import { useWalletAuth } from "@/components/auth/wallet-context"
 import { Connection, clusterApiUrl, PublicKey } from '@solana/web3.js'
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token'
-import { getTokenMetadata, getTokenPrice, calculateTokenValue, calculatePortfolioAllocation, TokenMetadata, TokenPrice } from "@/lib/api/token-data"
+import { getTokenMetadata, getTokenPrice, calculateTokenValue, calculatePortfolioAllocation, formatTokenValue, TokenMetadata, TokenPrice } from "@/lib/api/token-data"
 import { PieChart } from "@/components/PieChart"
 
 interface TokenAccount {
@@ -222,27 +222,39 @@ export default function PortfolioPage() {
                 const metadata = metadataBatch[index]
                 const price = priceBatch[index]
 
+                // Ensure we're using the correct amount and decimals
                 const tokenAmount = Number(info.tokenAmount.amount)
-                const value = calculateTokenValue(tokenAmount, price.price, metadata.decimals)
+                const decimals = metadata.decimals
+                
+                // Log raw token data for debugging
+                console.log("Raw token data:", {
+                  mint: mintAddress,
+                  rawAmount: tokenAmount,
+                  decimals: decimals,
+                  price: price.price
+                })
+
+                const value = calculateTokenValue(tokenAmount, price.price, decimals)
 
                 console.log("Token processed:", {
                   mint: mintAddress,
                   name: metadata.name,
                   amount: tokenAmount,
-                  decimals: metadata.decimals,
+                  decimals: decimals,
                   price: price.price,
-                  value: value
+                  value: value,
+                  formattedAmount: `${info.tokenAmount.uiAmount} ${metadata.symbol}`
                 })
 
                 return {
                   mint: mintAddress,
                   amount: tokenAmount,
-                  decimals: metadata.decimals,
+                  decimals: decimals,
                   metadata,
                   price,
                   value,
                   formattedAmount: `${info.tokenAmount.uiAmount} ${metadata.symbol}`,
-                  formattedValue: `$${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                  formattedValue: formatTokenValue(value),
                   change: `${price.priceChange24h > 0 ? '+' : ''}${price.priceChange24h.toFixed(2)}%`,
                   changePercent: price.priceChange24h,
                   positive: price.priceChange24h > 0,
@@ -447,7 +459,7 @@ export default function PortfolioPage() {
                       <div>
                         <h3 className="font-medium">{asset.metadata.name}</h3>
                         <p className="text-sm text-muted-foreground">
-                          {asset.formattedAmount} (${asset.formattedValue})
+                          {asset.formattedAmount} ({asset.formattedValue})
                         </p>
                       </div>
                       <div className="text-right">

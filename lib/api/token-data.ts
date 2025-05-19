@@ -93,6 +93,25 @@ export async function getTokenMetadata(mintAddress: string): Promise<TokenMetada
 
 // Fetch token prices from CoinGecko with fallback to Jupiter API
 export async function getTokenPrice(mintAddress: string): Promise<TokenPrice> {
+  // 1. Try Dexscreener first
+  try {
+    const dsRes = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mintAddress}`)
+    if (dsRes.ok) {
+      const dsData = await dsRes.json()
+      // Use the first pool (or the one with the highest liquidity if you want to be more robust)
+      const pool = dsData.pairs?.[0]
+      if (pool && pool.priceUsd) {
+        return {
+          price: parseFloat(pool.priceUsd),
+          priceChange24h: pool.priceChange?.h24 ?? 0
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Dexscreener price fetch failed:', e)
+  }
+
+  // 2. Fallback to CoinGecko/Jupiter (existing logic)
   try {
     // For SOL, use a direct price fetch
     if (mintAddress === 'So11111111111111111111111111111111111111112') {
@@ -155,7 +174,32 @@ export async function getTokenPrice(mintAddress: string): Promise<TokenPrice> {
 
 // Calculate token value and allocation
 export function calculateTokenValue(amount: number, price: number, decimals: number): number {
-  return (amount / Math.pow(10, decimals)) * price
+  // Ensure amount is treated as a string to preserve precision
+  const adjustedAmount = Number(amount) / Math.pow(10, decimals)
+  const value = adjustedAmount * price
+  
+  // Log the calculation for debugging
+  console.log('Token value calculation:', {
+    rawAmount: amount,
+    decimals,
+    adjustedAmount,
+    price,
+    finalValue: value
+  })
+  
+  return value
+}
+
+export function formatTokenValue(value: number): string {
+  // Ensure we're working with a valid number
+  const safeValue = isNaN(value) ? 0 : value
+  
+  return safeValue.toLocaleString("en-US", { 
+    style: 'currency', 
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })
 }
 
 // Calculate portfolio allocation

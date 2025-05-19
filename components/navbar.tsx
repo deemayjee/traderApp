@@ -30,19 +30,8 @@ export function Navbar() {
           </Link>
         </div>
         <nav className="hidden md:flex items-center space-x-6">
-          <Link href="/docs" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-            Docs
-          </Link>
           <Link
-            href="https://github.com"
-            target="_blank"
-            className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
-          >
-            <Github size={16} />
-            GitHub
-          </Link>
-          <Link
-            href="https://twitter.com"
+            href="https://x.com/PallyTrader"
             target="_blank"
             className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
           >
@@ -50,7 +39,9 @@ export function Navbar() {
             Twitter
           </Link>
           <Button variant="outline" size="sm" className="ml-4 border-border hover:bg-muted">
-            Join Telegram <ExternalLink size={14} className="ml-1" />
+            <Link href="https://t.me/pallytraders" target="_blank" className="flex items-center">
+              Join Telegram <ExternalLink size={14} className="ml-1" />
+            </Link>
           </Button>
 
           <ThemeToggleSimple />

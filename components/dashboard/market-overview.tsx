@@ -76,7 +76,7 @@ export function MarketOverview({ marketData, className = "", onTokenSelect }: Ma
                 <TableCell className="font-medium">
                   <div className="flex items-center">
                     <PallyIcon />
-                    {asset.name} <span className="text-muted-foreground ml-1">{asset.symbol}</span>
+                    <span title={asset.name} className="text-muted-foreground">{asset.symbol}</span>
                   </div>
                 </TableCell>
                 <TableCell>${asset.price}</TableCell>
