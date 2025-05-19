@@ -1,9 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+import { supabaseAdmin } from '@/lib/supabase/server-admin';
 
 interface UserProfile {
   id: string;
@@ -43,7 +38,7 @@ interface UserProfile {
 export const updateProfile = async (profileData: Partial<UserProfile>) => {
   try {
     // Update the main profile data
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('user_profiles')
       .update({
         display_name: profileData.display_name,
@@ -67,7 +62,7 @@ export const updateProfile = async (profileData: Partial<UserProfile>) => {
 
     // Update user preferences if provided
     if (profileData.user_preferences) {
-      const { error: preferencesError } = await supabase
+      const { error: preferencesError } = await supabaseAdmin
         .from('user_preferences')
         .update(profileData.user_preferences)
         .eq('wallet_address', data.wallet_address);
@@ -77,7 +72,7 @@ export const updateProfile = async (profileData: Partial<UserProfile>) => {
 
     // Update notification settings if provided
     if (profileData.notification_settings) {
-      const { error: notificationError } = await supabase
+      const { error: notificationError } = await supabaseAdmin
         .from('notification_settings')
         .update(profileData.notification_settings)
         .eq('wallet_address', data.wallet_address);
@@ -87,7 +82,7 @@ export const updateProfile = async (profileData: Partial<UserProfile>) => {
 
     // Update trading preferences if provided
     if (profileData.trading_preferences) {
-      const { error: tradingError } = await supabase
+      const { error: tradingError } = await supabaseAdmin
         .from('trading_preferences')
         .update(profileData.trading_preferences)
         .eq('wallet_address', data.wallet_address);
@@ -97,7 +92,7 @@ export const updateProfile = async (profileData: Partial<UserProfile>) => {
 
     // Update security settings if provided
     if (profileData.security_settings) {
-      const { error: securityError } = await supabase
+      const { error: securityError } = await supabaseAdmin
         .from('security_settings')
         .update(profileData.security_settings)
         .eq('wallet_address', data.wallet_address);
@@ -107,7 +102,7 @@ export const updateProfile = async (profileData: Partial<UserProfile>) => {
 
     // Update subscription settings if provided
     if (profileData.subscription_settings) {
-      const { error: subscriptionError } = await supabase
+      const { error: subscriptionError } = await supabaseAdmin
         .from('subscription_settings')
         .update(profileData.subscription_settings)
         .eq('wallet_address', data.wallet_address);

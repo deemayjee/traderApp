@@ -10,21 +10,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AlertCircle, Wallet } from "lucide-react"
 import { useWalletAuth } from "@/components/auth/wallet-context"
-import { useWallet } from "@solana/wallet-adapter-react"
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui"
 
 export default function Login() {
   const router = useRouter()
   const { login, isAuthenticated, isLoading: authLoading } = useWalletAuth()
-  const { connected } = useWallet()
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
 
   useEffect(() => {
-    if (isAuthenticated && connected) {
+    if (isAuthenticated) {
       router.push("/dashboard")
     }
-  }, [isAuthenticated, connected, router])
+  }, [isAuthenticated, router])
 
   const handleLogin = async () => {
     setIsLoading(true)
@@ -70,7 +67,14 @@ export default function Login() {
               )}
 
               <div className="flex justify-center">
-                <WalletMultiButton className="bg-black hover:bg-gray-800 text-white font-bold py-2 px-6 rounded-full transition-all" />
+                <Button
+                  className="font-bold py-2 px-6 rounded-full transition-all flex items-center gap-2"
+                  onClick={handleLogin}
+                  disabled={isLoading}
+                >
+                  <Wallet className="h-5 w-5" />
+                  {isLoading ? "Connecting..." : "Connect Wallet"}
+                </Button>
               </div>
 
               <div className="text-center text-sm text-gray-500 mt-4">

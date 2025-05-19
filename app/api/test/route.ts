@@ -1,10 +1,10 @@
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase/server-admin'
 import { NextResponse } from 'next/server'
 
 export async function GET() {
   try {
     // Test the connection with a simple query
-    const { data, error } = await supabase.from('users').select('count')
+    const { data, error } = await supabaseAdmin.from('users').select('count')
     
     if (error) {
       console.error('Supabase connection error:', error)

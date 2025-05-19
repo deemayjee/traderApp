@@ -6,10 +6,12 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { LayoutDashboard, LineChart, Wallet, Bell, Users, Settings, Brain, Copy, LogOut } from "lucide-react"
 import { useWalletAuth } from "@/components/auth/wallet-context"
+import { useUserProfile } from "@/contexts/user-profile-context"
 
 export function DashboardSidebar() {
   const pathname = usePathname()
   const { user, logout } = useWalletAuth()
+  const { profile } = useUserProfile()
 
   const menuItems = [
     {
@@ -48,6 +50,11 @@ export function DashboardSidebar() {
       icon: <Brain className="h-5 w-5" />,
     },
     {
+      title: "Agent Training",
+      href: "/ai-agents/train",
+      icon: <Brain className="h-5 w-5" />,
+    },
+    {
       title: "Settings",
       href: "/dashboard/settings",
       icon: <Settings className="h-5 w-5" />,
@@ -64,8 +71,8 @@ export function DashboardSidebar() {
         </Link>
         <div className="flex items-center gap-3 mb-2">
           <Avatar className="h-10 w-10">
-            <AvatarImage src="/placeholder.svg?height=40&width=40" alt="Wallet" />
-            <AvatarFallback>W</AvatarFallback>
+            <AvatarImage src={profile?.avatar_url || "/placeholder.svg?height=40&width=40"} alt={profile?.username || "Wallet"} />
+            <AvatarFallback>{(profile?.username?.charAt(0) || user?.address?.charAt(0) || "W").toUpperCase()}</AvatarFallback>
           </Avatar>
           <div>
             <p className="text-sm font-medium">Wallet</p>

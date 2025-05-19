@@ -6,14 +6,16 @@ import type { UserProfile } from "@/lib/types/settings"
 
 const settingsService = new SettingsService()
 
+export const dynamic = 'force-dynamic' // This ensures the route is dynamic
+
 export async function GET() {
   try {
     const session = await getServerSession(authOptions)
-    if (!session?.user?.id) {
+    if (!session?.user?.address) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const profile = await settingsService.getProfile(session.user.id)
+    const profile = await settingsService.getProfile(session.user.address)
     if (!profile) {
       return NextResponse.json({ error: "Profile not found" }, { status: 404 })
     }
@@ -28,7 +30,7 @@ export async function GET() {
 export async function PUT(request: Request) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session?.user?.id) {
+    if (!session?.user?.address) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
@@ -44,7 +46,7 @@ export async function PUT(request: Request) {
       public_profile: body.public_profile
     }
 
-    const updatedProfile = await settingsService.updateProfile(session.user.id, profile)
+    const updatedProfile = await settingsService.updateProfile(session.user.address, profile)
     if (!updatedProfile) {
       return NextResponse.json({ error: "Failed to update profile" }, { status: 500 })
     }

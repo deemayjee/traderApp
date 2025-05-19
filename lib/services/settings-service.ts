@@ -1,4 +1,5 @@
-import { supabase } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase/client"
+import { supabaseAdmin } from "@/lib/supabase/server-admin"
 import { AuthService } from "./auth-service"
 
 export interface UserPreferences {
@@ -49,9 +50,21 @@ export interface DashboardPreferences {
 
 export class SettingsService {
   private authService: AuthService
+  private isServer: boolean
 
-  constructor() {
+  constructor(isServer: boolean = false) {
     this.authService = new AuthService()
+    this.isServer = isServer
+  }
+
+  public getSupabase() {
+    if (this.isServer) {
+      if (!supabaseAdmin) {
+        throw new Error('Server-side Supabase client is not available. This operation requires server-side execution.')
+      }
+      return supabaseAdmin
+    }
+    return supabase
   }
 
   private async ensureAuth(walletAddress: string) {
@@ -60,7 +73,7 @@ export class SettingsService {
 
   async updatePreferences(walletAddress: string, preferences: Partial<UserPreferences>) {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await this.getSupabase()
         .from("user_preferences")
         .upsert({
           wallet_address: walletAddress,
@@ -97,7 +110,7 @@ export class SettingsService {
       }
       
       // First check if a profile already exists for this wallet
-      const { data: existingProfile, error: checkError } = await supabase
+      const { data: existingProfile, error: checkError } = await this.getSupabase()
         .from('user_profiles')
         .select('*')
         .eq('wallet_address', walletAddress)
@@ -120,7 +133,7 @@ export class SettingsService {
         console.log("Final update payload:", updateData);
         
         // Update user_profiles table
-        const { data: profile, error } = await supabase
+        const { data: profile, error } = await this.getSupabase()
           .from('user_profiles')
           .update(updateData)
           .eq('wallet_address', walletAddress)
@@ -139,7 +152,7 @@ export class SettingsService {
             username: data.username
           });
           
-          const { data: userData, error: userUpdateError } = await supabase
+          const { data: userData, error: userUpdateError } = await this.getSupabase()
             .from('users')
             .update({ username: data.username })
             .eq('wallet_address', walletAddress)
@@ -157,7 +170,7 @@ export class SettingsService {
         result = profile;
       } else {
         // Insert new profile
-        const { data: profile, error } = await supabase
+        const { data: profile, error } = await this.getSupabase()
           .from('user_profiles')
           .insert({
             wallet_address: walletAddress,
@@ -176,7 +189,7 @@ export class SettingsService {
             username: data.username
           });
           
-          const { data: userData, error: userUpdateError } = await supabase
+          const { data: userData, error: userUpdateError } = await this.getSupabase()
             .from('users')
             .update({ username: data.username })
             .eq('wallet_address', walletAddress)
@@ -210,7 +223,7 @@ export class SettingsService {
       await this.ensureAuth(walletAddress);
 
       // First check if settings already exist for this wallet
-      const { data: existingSettings, error: checkError } = await supabase
+      const { data: existingSettings, error: checkError } = await this.getSupabase()
         .from('notification_settings')
         .select('*')
         .eq('wallet_address', walletAddress)
@@ -227,7 +240,7 @@ export class SettingsService {
       if (existingSettings) {
         // Update existing settings
         console.log('Updating existing settings...');
-        const { data, error } = await supabase
+        const { data, error } = await this.getSupabase()
           .from('notification_settings')
           .update({
             ...settings,
@@ -246,7 +259,7 @@ export class SettingsService {
       } else {
         // Insert new settings
         console.log('Creating new settings...');
-        const { data, error } = await supabase
+        const { data, error } = await this.getSupabase()
           .from('notification_settings')
           .insert({
             wallet_address: walletAddress,
@@ -273,7 +286,7 @@ export class SettingsService {
 
   async updateSecuritySettings(walletAddress: string, settings: Partial<SecuritySettings>) {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await this.getSupabase()
         .from("security_settings")
         .upsert({
           wallet_address: walletAddress,
@@ -293,7 +306,7 @@ export class SettingsService {
 
   async updateDashboardPreferences(walletAddress: string, preferences: Partial<DashboardPreferences>) {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await this.getSupabase()
         .from("dashboard_preferences")
         .upsert({
           wallet_address: walletAddress,
@@ -342,22 +355,52 @@ export class SettingsService {
 
   async getProfile(walletAddress: string) {
     try {
-      const { data, error } = await supabase
+      // First try to get from user_profiles
+      const { data: profileData, error: profileError } = await this.getSupabase()
         .from("user_profiles")
         .select("*")
         .eq("wallet_address", walletAddress)
         .single()
 
-      if (error && error.code !== "PGRST116") throw error
-      return data
+      if (profileError && profileError.code !== "PGRST116") {
+        console.error("Error fetching profile:", profileError)
+        return null
+      }
+
+      // If no profile exists, try to get basic info from users table
+      if (!profileData) {
+        const { data: userData, error: userError } = await this.getSupabase()
+          .from("users")
+          .select("username, avatar_url")
+          .eq("wallet_address", walletAddress)
+          .single()
+
+        if (userError && userError.code !== "PGRST116") {
+          console.error("Error fetching user:", userError)
+          return null
+        }
+
+        if (userData) {
+          return {
+            username: userData.username,
+            avatar_url: userData.avatar_url,
+            wallet_address: walletAddress,
+            bio: "",
+            timezone: "",
+            public_profile: true,
+          }
+        }
+      }
+
+      return profileData
     } catch (error) {
-      console.error("Error fetching profile:", error)
+      console.error("Error in getProfile:", error)
       return null
     }
   }
 
   private async getPreferences(walletAddress: string) {
-    const { data, error } = await supabase
+    const { data, error } = await this.getSupabase()
       .from("user_preferences")
       .select("*")
       .eq("wallet_address", walletAddress)
@@ -367,7 +410,7 @@ export class SettingsService {
   }
 
   private async getNotificationSettings(walletAddress: string) {
-    const { data, error } = await supabase
+    const { data, error } = await this.getSupabase()
       .from("notification_settings")
       .select("*")
       .eq("wallet_address", walletAddress)
@@ -377,7 +420,7 @@ export class SettingsService {
   }
 
   private async getSecuritySettings(walletAddress: string) {
-    const { data, error } = await supabase
+    const { data, error } = await this.getSupabase()
       .from("security_settings")
       .select("*")
       .eq("wallet_address", walletAddress)
@@ -387,7 +430,7 @@ export class SettingsService {
   }
 
   private async getDashboardPreferences(walletAddress: string) {
-    const { data, error } = await supabase
+    const { data, error } = await this.getSupabase()
       .from("dashboard_preferences")
       .select("*")
       .eq("wallet_address", walletAddress)

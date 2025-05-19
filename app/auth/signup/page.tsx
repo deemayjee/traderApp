@@ -68,7 +68,7 @@ export default function Signup() {
             <CardHeader className="space-y-1">
               <CardTitle className="text-2xl font-bold text-center">Create an account</CardTitle>
               <CardDescription className="text-center">
-                Enter your details to create your CryptoSage account
+                Enter your details to create your Pally Traders account
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">

@@ -5,6 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts"
 import type { AIAgent } from "./create-agent-dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { BarChart3, LineChart as LineChartIcon, AlertCircle } from "lucide-react"
+import { TrendingUp } from "lucide-react"
+import { Percent } from "lucide-react"
 
 interface PerformanceData {
   date: string
@@ -19,136 +23,176 @@ interface AgentPerformanceChartProps {
 }
 
 export function AgentPerformanceChart({ agent, signals }: AgentPerformanceChartProps) {
-  const agentSignals = signals.filter((signal) => signal.agentId === agent.id)
-  const [timeframe, setTimeframe] = useState("1m")
+  type TimePeriod = "24h" | "7d" | "30d" | "90d"
+  const [timePeriod, setTimePeriod] = useState<TimePeriod>("7d")
+  const [selectedMetric, setSelectedMetric] = useState("accuracy")
 
-  // Generate mock performance data
-  const generatePerformanceData = (days: number): PerformanceData[] => {
-    const data: PerformanceData[] = []
+  // Process signals data for the selected time period
+  const processData = () => {
     const now = new Date()
-    let accuracy = 75 + Math.random() * 10
-    let cumulativeProfit = 0
-    let signalCount = 0
+    const periodMs: Record<TimePeriod, number> = {
+      "24h": 24 * 60 * 60 * 1000,
+      "7d": 7 * 24 * 60 * 60 * 1000,
+      "30d": 30 * 24 * 60 * 60 * 1000,
+      "90d": 90 * 24 * 60 * 60 * 1000,
+    }
 
-    for (let i = days; i >= 0; i--) {
-      const date = new Date(now)
-      date.setDate(date.getDate() - i)
-
-      // Simulate some randomness but with a trend
-      accuracy = Math.max(65, Math.min(95, accuracy + (Math.random() - 0.5) * 2))
-      const dailyProfit = (Math.random() - 0.3) * 2 // Slightly biased towards profit
-      cumulativeProfit += dailyProfit
-
-      // More signals on some days than others
-      const dailySignals = Math.floor(Math.random() * 3)
-      signalCount += dailySignals
-
-      data.push({
-        date: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-        accuracy,
-        profit: cumulativeProfit,
-        signals: signalCount,
+    const filteredSignals = signals
+      .filter(signal => signal.agentId === agent.id)
+      .filter(signal => {
+        const signalDate = new Date(signal.timestamp)
+        return now.getTime() - signalDate.getTime() <= periodMs[timePeriod]
       })
-    }
 
-    return data
+    // Group signals by day
+    const groupedData = filteredSignals.reduce((acc, signal) => {
+      const date = new Date(signal.timestamp).toISOString().split("T")[0]
+      if (!acc[date]) {
+        acc[date] = {
+          date,
+          signals: 0,
+          success: 0,
+          profit: 0,
+        }
+      }
+      acc[date].signals++
+      if (signal.result === "Success") {
+        acc[date].success++
+        acc[date].profit += signal.profit || 0
+      }
+      return acc
+    }, {})
+
+    // Convert to array and calculate metrics
+    return Object.values(groupedData)
+      .map((day: any) => ({
+        date: day.date,
+        accuracy: day.signals > 0 ? (day.success / day.signals) * 100 : 0,
+        profit: day.profit,
+        signals: day.signals,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date))
   }
 
-  // Get data based on selected timeframe
-  const getPerformanceData = () => {
-    switch (timeframe) {
-      case "1w":
-        return generatePerformanceData(7)
-      case "1m":
-        return generatePerformanceData(30)
-      case "3m":
-        return generatePerformanceData(90)
-      default:
-        return generatePerformanceData(30)
-    }
-  }
-
-  const performanceData = getPerformanceData()
-
-  // Calculate summary statistics
-  const latestData = performanceData[performanceData.length - 1]
-  const averageAccuracy = latestData.accuracy.toFixed(1)
-  const totalProfit = latestData.profit.toFixed(2)
-  const totalSignals = latestData.signals
+  const data = processData()
 
   return (
-    <Card className="border-gray-200">
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-lg font-semibold">{agent.name} Performance</CardTitle>
-        <Tabs defaultValue="1m" value={timeframe} onValueChange={setTimeframe}>
-          <TabsList className="bg-gray-100 border border-gray-200">
-            <TabsTrigger value="1w" className="data-[state=active]:bg-white">
-              1W
-            </TabsTrigger>
-            <TabsTrigger value="1m" className="data-[state=active]:bg-white">
-              1M
-            </TabsTrigger>
-            <TabsTrigger value="3m" className="data-[state=active]:bg-white">
-              3M
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+    <Card className="border-gray-200 shadow-lg rounded-xl">
+      <CardHeader className="pb-2">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <CardTitle className="text-xl font-bold">Performance Analysis</CardTitle>
+          <div className="flex items-center space-x-4">
+            <Select value={selectedMetric} onValueChange={setSelectedMetric}>
+              <SelectTrigger className="w-[150px]">
+                <SelectValue placeholder="Select metric" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="accuracy">Accuracy</SelectItem>
+                <SelectItem value="profit">Profit</SelectItem>
+                <SelectItem value="signals">Signals</SelectItem>
+              </SelectContent>
+            </Select>
+            <Tabs value={timePeriod} onValueChange={(value) => setTimePeriod(value as TimePeriod)}>
+              <TabsList className="bg-gray-100 border border-gray-200 dark:bg-muted/80 dark:border-gray-800">
+                <TabsTrigger value="24h" className="data-[state=active]:bg-white dark:data-[state=active]:bg-background dark:data-[state=active]:text-white">24h</TabsTrigger>
+                <TabsTrigger value="7d" className="data-[state=active]:bg-white dark:data-[state=active]:bg-background dark:data-[state=active]:text-white">7d</TabsTrigger>
+                <TabsTrigger value="30d" className="data-[state=active]:bg-white dark:data-[state=active]:bg-background dark:data-[state=active]:text-white">30d</TabsTrigger>
+                <TabsTrigger value="90d" className="data-[state=active]:bg-white dark:data-[state=active]:bg-background dark:data-[state=active]:text-white">90d</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
-        <div className="h-[300px] w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={performanceData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-              <XAxis
-                dataKey="date"
-                tick={{ fontSize: 12 }}
-                tickFormatter={(value) => {
-                  // Show fewer ticks for better readability
-                  const index = performanceData.findIndex((item) => item.date === value)
-                  return index % Math.ceil(performanceData.length / 7) === 0 ? value : ""
-                }}
-              />
-              <YAxis yAxisId="left" orientation="left" tick={{ fontSize: 12 }} />
-              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} />
-              <Tooltip />
-              <Legend />
-              <Line
-                yAxisId="left"
-                type="monotone"
-                dataKey="accuracy"
-                name="Accuracy %"
-                stroke="#8884d8"
-                strokeWidth={2}
-                dot={false}
-              />
-              <Line
-                yAxisId="right"
-                type="monotone"
-                dataKey="profit"
-                name="Profit %"
-                stroke="#82ca9d"
-                strokeWidth={2}
-                dot={false}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+        <div className="h-[300px] flex items-center justify-center bg-background rounded-lg border border-dashed border-gray-300 mb-6">
+          {data.length === 0 ? (
+            <div className="flex flex-col items-center justify-center text-center text-gray-500">
+              <LineChartIcon className="h-12 w-12 mb-2 text-gray-400" />
+              <div className="font-semibold mb-1">No Data Available</div>
+              <div className="text-sm">There are no signals or performance data for this period.</div>
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={data}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis 
+                  dataKey="date" 
+                  tickFormatter={(date) => {
+                    const d = new Date(date)
+                    return timePeriod === "24h" 
+                      ? d.toLocaleTimeString([], { hour: "2-digit" })
+                      : d.toLocaleDateString([], { month: "short", day: "numeric" })
+                  }}
+                />
+                <YAxis 
+                  tickFormatter={(value) => 
+                    selectedMetric === "profit" 
+                      ? `${value}%` 
+                      : selectedMetric === "accuracy"
+                      ? `${value}%`
+                      : value
+                  }
+                />
+                <Tooltip
+                  content={({ active, payload, label }) => {
+                    if (active && payload && payload.length) {
+                      const data = payload[0].payload
+                      return (
+                        <div className="bg-white p-3 border rounded-lg shadow-lg">
+                          <p className="font-medium">{label}</p>
+                          <p className="text-sm text-gray-500">
+                            Accuracy: {data.accuracy.toFixed(1)}%
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            Profit: {data.profit.toFixed(1)}%
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            Signals: {data.signals}
+                          </p>
+                        </div>
+                      )
+                    }
+                    return null
+                  }}
+                />
+                <Legend />
+                <Line
+                  type="monotone"
+                  dataKey={selectedMetric}
+                  stroke="#2563eb"
+                  strokeWidth={2}
+                  dot={false}
+                  activeDot={{ r: 8 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
         </div>
-
-        <div className="grid grid-cols-3 gap-4 mt-4">
-          <div className="bg-gray-50 rounded-md p-3 border border-gray-200">
-            <p className="text-xs text-gray-500">Avg. Accuracy</p>
-            <p className="text-lg font-medium">{averageAccuracy}%</p>
-          </div>
-          <div className="bg-gray-50 rounded-md p-3 border border-gray-200">
-            <p className="text-xs text-gray-500">Total Profit</p>
-            <p className={`text-lg font-medium ${Number(totalProfit) >= 0 ? "text-green-600" : "text-red-600"}`}>
-              {Number(totalProfit) >= 0 ? "+" : ""}
-              {totalProfit}%
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="p-6 bg-gray-50 dark:bg-gray-900 rounded-lg flex flex-col items-center shadow-sm border border-gray-200">
+            <Percent className="h-6 w-6 text-green-500 mb-2" />
+            <p className="text-base text-gray-500 mb-1">Average Accuracy</p>
+            <p className="text-2xl font-bold">
+              {data.length > 0
+                ? `${(data.reduce((acc, d) => acc + d.accuracy, 0) / data.length).toFixed(1)}%`
+                : "N/A"}
             </p>
           </div>
-          <div className="bg-gray-50 rounded-md p-3 border border-gray-200">
-            <p className="text-xs text-gray-500">Total Signals</p>
-            <p className="text-lg font-medium">{totalSignals}</p>
+          <div className="p-6 bg-gray-50 dark:bg-gray-900 rounded-lg flex flex-col items-center shadow-sm border border-gray-200">
+            <BarChart3 className="h-6 w-6 text-purple-500 mb-2" />
+            <p className="text-base text-gray-500 mb-1">Total Profit</p>
+            <p className="text-2xl font-bold">
+              {data.length > 0
+                ? `${data.reduce((acc, d) => acc + d.profit, 0).toFixed(1)}%`
+                : "N/A"}
+            </p>
+          </div>
+          <div className="p-6 bg-gray-50 dark:bg-gray-900 rounded-lg flex flex-col items-center shadow-sm border border-gray-200">
+            <TrendingUp className="h-6 w-6 text-blue-500 mb-2" />
+            <p className="text-base text-gray-500 mb-1">Total Signals</p>
+            <p className="text-2xl font-bold">
+              {data.reduce((acc, d) => acc + d.signals, 0)}
+            </p>
           </div>
         </div>
       </CardContent>

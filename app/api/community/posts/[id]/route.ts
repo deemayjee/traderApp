@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { supabaseAdmin } from '@/lib/supabase/server-admin'
 
 export async function DELETE(
   request: Request,
@@ -7,10 +7,9 @@ export async function DELETE(
 ) {
   try {
     const { id } = params
-    const supabase = createClient()
 
     // Delete the post
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from('community_posts')
       .delete()
       .eq('id', id)

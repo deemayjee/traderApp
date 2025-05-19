@@ -17,14 +17,16 @@ interface CreateAlertDialogProps {
   onOpenChange: (open: boolean) => void
   onCreateAlert?: (newAlert: Omit<CryptoAlert, "id">) => void
   cryptoOptions?: Array<{ id: string; name: string; symbol: string; price: number }>
+  walletAddress: string
 }
 
-export function CreateAlertDialog({ open, onOpenChange, onCreateAlert, cryptoOptions = [] }: CreateAlertDialogProps) {
+export function CreateAlertDialog({ open, onOpenChange, onCreateAlert, cryptoOptions = [], walletAddress }: CreateAlertDialogProps) {
   const [asset, setAsset] = useState("BTC")
   const [alertType, setAlertType] = useState("price")
   const [condition, setCondition] = useState("above")
   const [value, setValue] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [priority, setPriority] = useState<'high' | 'medium' | 'low'>('medium')
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -33,15 +35,16 @@ export function CreateAlertDialog({ open, onOpenChange, onCreateAlert, cryptoOpt
     try {
       // Create the alert object
       const newAlert: Omit<CryptoAlert, "id"> = {
-        type: alertType as "price" | "signal" | "whale",
-        title: `${asset} ${alertType} Alert`,
-        description: `Alert when ${asset} ${alertType} ${condition} ${value}`,
-        active: true,
-        time: "Just now",
-        asset: cryptoOptions.find(opt => opt.symbol === asset)?.name || asset,
+        type: alertType as "price" | "volume" | "trend",
         symbol: asset,
-        targetPrice: alertType === "price" ? parseFloat(value) : undefined,
-        currentPrice: cryptoOptions.find(opt => opt.symbol === asset)?.price
+        condition,
+        value: parseFloat(value),
+        active: true,
+        priority,
+        timestamp: new Date().toISOString(),
+        title: `${asset} ${alertType} Alert`,
+        description: `${asset} ${alertType} alert when price is ${condition} ${value}`,
+        wallet_address: walletAddress
       }
 
       // Call the onCreateAlert callback if provided
@@ -134,6 +137,24 @@ export function CreateAlertDialog({ open, onOpenChange, onCreateAlert, cryptoOpt
                 onChange={(e) => setValue(e.target.value)}
                 placeholder={alertType === "price" ? "e.g. 50000" : alertType === "rsi" ? "e.g. 70" : "e.g. 1000000"}
               />
+            </div>
+
+            <div className="grid gap-2">
+              <Label>Priority</Label>
+              <RadioGroup value={priority} onValueChange={v => setPriority(v as 'high' | 'medium' | 'low')} className="flex gap-4">
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="high" id="priority-high" />
+                  <Label htmlFor="priority-high">High</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="medium" id="priority-medium" />
+                  <Label htmlFor="priority-medium">Medium</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="low" id="priority-low" />
+                  <Label htmlFor="priority-low">Low</Label>
+                </div>
+              </RadioGroup>
             </div>
           </div>
           <DialogFooter>

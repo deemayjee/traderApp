@@ -18,7 +18,7 @@ import {
   Legend,
   Filler,
 } from "chart.js"
-import { fetchCryptoHistoricalData } from "@/lib/api/crypto-api"
+import { fetchBinanceHistoricalData } from "@/lib/api/crypto-api"
 
 ChartJS.register(
   CategoryScale,
@@ -40,6 +40,7 @@ interface SimplePriceChartProps {
 export function SimplePriceChart({ selectedCoin, timeRange, onTimeRangeChange }: SimplePriceChartProps) {
   const [priceData, setPriceData] = useState<number[]>([])
   const [labels, setLabels] = useState<string[]>([])
+  const [volumesData, setVolumesData] = useState<number[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -75,7 +76,19 @@ export function SimplePriceChart({ selectedCoin, timeRange, onTimeRangeChange }:
     const fetchData = async () => {
       setIsLoading(true)
       try {
-        const { prices, volumes } = await fetchCryptoHistoricalData(selectedCoin, timeRange)
+        // Map timeRange to Binance interval and limit
+        const intervalMap: Record<string, { interval: string, limit: number }> = {
+          "1m": { interval: "1m", limit: 60 },
+          "5m": { interval: "5m", limit: 60 },
+          "15m": { interval: "15m", limit: 60 },
+          "1h": { interval: "1h", limit: 48 },
+          "4h": { interval: "4h", limit: 60 },
+          "1d": { interval: "1d", limit: 30 },
+          "7d": { interval: "4h", limit: 42 }, // 7d = 42 x 4h
+          "30d": { interval: "1d", limit: 30 },
+        }
+        const { interval, limit } = intervalMap[timeRange] || { interval: "1d", limit: 30 }
+        const { prices, volumes } = await fetchBinanceHistoricalData(selectedCoin, interval, limit)
         
         // Format the data for the chart
         const formattedPrices = prices.map(([timestamp, price]: [number, number]) => price)
@@ -102,6 +115,7 @@ export function SimplePriceChart({ selectedCoin, timeRange, onTimeRangeChange }:
 
         setPriceData(formattedPrices)
         setLabels(formattedLabels)
+        setVolumesData(volumes.map(([timestamp, volume]: [number, number]) => volume))
         setError(null)
       } catch (err) {
         console.error("Error fetching coin data:", err)
@@ -112,6 +126,11 @@ export function SimplePriceChart({ selectedCoin, timeRange, onTimeRangeChange }:
     }
 
     fetchData()
+    
+    // Set up interval to refresh data every 10 seconds
+    const interval = setInterval(fetchData, 10000)
+    
+    return () => clearInterval(interval)
   }, [selectedCoin, timeRange])
 
   const formatPrice = (price: number) => {
@@ -302,11 +321,11 @@ export function SimplePriceChart({ selectedCoin, timeRange, onTimeRangeChange }:
             { label: "Open", value: formatPrice(priceData[0]) },
             { label: "High", value: formatPrice(Math.max(...priceData)) },
             { label: "Low", value: formatPrice(Math.min(...priceData)) },
-            { label: "Volume", value: "N/A" },
+            { label: "Volume", value: volumesData.length > 0 ? volumesData[volumesData.length - 1].toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : "N/A" },
           ].map((item, index) => (
             <div key={index} className="bg-muted/50 rounded-md p-3 border border-border">
               <p className="text-xs text-muted-foreground">{item.label}</p>
-              <p className="text-sm font-medium text-foreground">${item.value}</p>
+              <p className="text-sm font-medium text-foreground">{item.label === "Volume" ? "$" : "$"}{item.value}</p>
             </div>
           ))}
         </div>

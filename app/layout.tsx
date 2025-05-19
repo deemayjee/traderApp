@@ -5,16 +5,17 @@ import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { NotificationProvider } from "@/contexts/notification-context"
 import { Toaster } from "@/components/ui/toaster"
-import { SolanaWalletProvider } from "@/components/auth/wallet-provider"
+import { WalletProvider } from "@/components/auth/wallet-provider"
 import { WalletAuthProvider } from "@/components/auth/wallet-context"
 import { UserProfileProvider } from "@/contexts/user-profile-context"
+import { AuthProvider } from "@/components/auth/auth-context"
 
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "CryptoSage | AI-Powered Social Trading",
+  title: "Pally Traders | AI-Powered Social Trading",
   description: "Connect with humans and AI agents for valuable crypto insights",
-  generator: 'v0.dev'
+  generator: 'Dmj'
 }
 
 export default function RootLayout({
@@ -25,18 +26,20 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.className} antialiased`}>
-        <SolanaWalletProvider>
+        <WalletProvider>
           <WalletAuthProvider>
-            <NotificationProvider>
-              <UserProfileProvider>
-                <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} disableTransitionOnChange>
-                  {children}
-                  <Toaster />
-                </ThemeProvider>
-              </UserProfileProvider>
-            </NotificationProvider>
+            <AuthProvider>
+              <NotificationProvider>
+                <UserProfileProvider>
+                  <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} disableTransitionOnChange>
+                    {children}
+                    <Toaster />
+                  </ThemeProvider>
+                </UserProfileProvider>
+              </NotificationProvider>
+            </AuthProvider>
           </WalletAuthProvider>
-        </SolanaWalletProvider>
+        </WalletProvider>
       </body>
     </html>
   )

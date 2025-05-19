@@ -1,33 +1,41 @@
 import { NextResponse } from "next/server"
-import { supabaseAdmin } from "@/lib/supabase"
-import { cookies } from "next/headers"
-import { createClient } from '@/lib/supabase/server'
-import { auth } from '@/auth'
+import { SettingsService } from "@/lib/services/settings-service"
 import { generateUUID } from '@/lib/utils/uuid'
+import { getUserDisplayInfo } from '@/lib/utils/user-display'
+import type { UserProfile } from "@/lib/types/settings"
 
-// Simplified auth function directly in this file
-async function getAuthUser() {
-  try {
-    const cookieStore = cookies()
-    const supabaseAuthCookie = cookieStore.get('sb-auth-token')?.value
-    
-    if (!supabaseAuthCookie) {
-      return null
-    }
-    
-    // Parse the token to get user id
-    const token = JSON.parse(supabaseAuthCookie)
-    if (!token?.user?.id) {
-      return null
-    }
-    
-    const walletAddress = token.user.id
-    
-    return { wallet: walletAddress }
-  } catch (error) {
-    console.error('Auth error:', error)
-    return null
-  }
+interface User {
+  wallet_address: string
+  username: string | null
+  email: string | null
+  avatar_url: string | null
+}
+
+interface Post {
+  id: string
+  content: string
+  image_url: string | null
+  tags: string[] | null
+  is_ai_generated: boolean
+  accuracy_percentage: number | null
+  likes_count: number
+  comments_count: number
+  shares_count: number
+  created_at: string
+  updated_at: string
+  wallet_address: string
+  users: User[] | null
+  user_profiles: UserProfile[] | null
+}
+
+interface Comment {
+  id: string
+  content: string
+  created_at: string
+  wallet_address: string
+  post_id: string
+  users: User[] | null
+  user_profiles: UserProfile[] | null
 }
 
 // Get posts with pagination, filtering, and sorting
@@ -37,10 +45,10 @@ export async function GET(request: Request) {
     const tab = searchParams.get('tab') || 'latest'
     const walletAddress = searchParams.get('walletAddress') || ''
 
-    const supabase = createClient()
+    const settingsService = new SettingsService(true) // Use server-side Supabase client
 
     // Base query for posts
-    let query = supabase
+    let query = settingsService.getSupabase()
       .from('community_posts')
       .select(`
         id,
@@ -63,91 +71,115 @@ export async function GET(request: Request) {
         )
       `)
 
-    // Apply sorting based on tab
-    if (tab === 'trending') {
-      // Sort by engagement score (likes + comments + shares)
-      query = query.order('likes_count', { ascending: false })
-                  .order('comments_count', { ascending: false })
-                  .order('shares_count', { ascending: false })
-    } else {
-      // Default sorting by creation date
-      query = query.order('created_at', { ascending: false })
-    }
-
     // Apply following filter if tab is 'following' and walletAddress is provided
     if (tab === 'following' && walletAddress) {
-      const { data: followingUsers, error: followingError } = await supabase
+      const { data: followingUsers, error: followingError } = await settingsService.getSupabase()
         .from('community_follows')
         .select('following_wallet')
         .eq('follower_wallet', walletAddress)
 
       if (followingError) {
-        console.error('Error fetching following users:', followingError)
-        return NextResponse.json({ error: 'Failed to fetch following users' }, { status: 500 })
+        throw followingError
       }
 
       const followingWallets = followingUsers?.map(user => user.following_wallet) || []
       query = query.in('wallet_address', followingWallets)
     }
 
-    // Execute the query
-    const { data: posts, error: postsError } = await query
-
-    if (postsError) {
-      console.error('Error fetching posts:', postsError)
-      return NextResponse.json({ error: 'Failed to fetch posts' }, { status: 500 })
+    // Apply sorting based on tab
+    switch (tab) {
+      case 'latest':
+        query = query.order('created_at', { ascending: false })
+        break
+      case 'popular':
+        query = query.order('likes_count', { ascending: false })
+        break
+      case 'ai':
+        query = query.eq('is_ai_generated', true)
+          .order('created_at', { ascending: false })
+        break
     }
 
-    if (!posts || posts.length === 0) {
-      return NextResponse.json({ posts: [] })
+    const { data: posts, error } = await query
+
+    if (error) {
+      throw error
     }
 
-    // Fetch likes and comments for each post
+    // Fetch likes for all posts
     const postIds = posts.map(post => post.id)
     
-    const { data: likes, error: likesError } = await supabase
+    const { data: likes, error: likesError } = await settingsService.getSupabase()
       .from('community_post_likes')
       .select('post_id, wallet_address')
       .in('post_id', postIds)
 
     if (likesError) {
-      console.error('Error fetching likes:', likesError)
-      return NextResponse.json({ error: 'Failed to fetch likes' }, { status: 500 })
+      throw likesError
     }
 
-    const { data: comments, error: commentsError } = await supabase
+    // Fetch comments for all posts
+    const { data: comments, error: commentsError } = await settingsService.getSupabase()
       .from('community_comments')
-      .select('post_id')
+      .select(`
+        id,
+        content,
+        created_at,
+        wallet_address,
+        post_id,
+        users!community_comments_wallet_address_fkey (
+          wallet_address,
+          username,
+          email,
+          avatar_url
+        )
+      `)
       .in('post_id', postIds)
 
     if (commentsError) {
-      console.error('Error fetching comments:', commentsError)
-      return NextResponse.json({ error: 'Failed to fetch comments' }, { status: 500 })
+      throw commentsError
+    }
+
+    // Fetch user profiles for all wallet addresses
+    const walletAddresses = posts.map(post => post.wallet_address)
+    const { data: profiles, error: profilesError } = await settingsService.getSupabase()
+      .from('user_profiles')
+      .select('wallet_address, username, avatar_url, bio')
+      .in('wallet_address', walletAddresses)
+    if (profilesError) {
+      throw profilesError
     }
 
     // Format the response
-    const formattedPosts = posts.map(post => ({
-      id: post.id,
-      content: post.content,
-      imageUrl: post.image_url,
-      tags: post.tags,
-      isAiGenerated: post.is_ai_generated,
-      accuracyPercentage: post.accuracy_percentage,
-      createdAt: post.created_at,
-      updatedAt: post.updated_at,
-      walletAddress: post.wallet_address,
-      author: {
-        username: post.users?.username || null,
-        email: post.users?.email || '',
-        avatar: post.users?.avatar_url || null
-      },
-      handle: post.users?.username ? `@${post.users.username.toLowerCase().replace(/\s+/g, "")}` : null,
-      engagement: {
-        likes: likes?.filter(like => like.post_id === post.id).length || 0,
-        comments: comments?.filter(comment => comment.post_id === post.id).length || 0,
-        shares: post.shares_count || 0
+    const formattedPosts = (posts as unknown as Post[]).map(post => {
+      // Find profile for this post
+      const profile = profiles.find(p => p.wallet_address === post.wallet_address) as UserProfile | undefined
+      const userInfo = getUserDisplayInfo(profile || null, post.wallet_address)
+      const avatarUrl = profile?.avatar_url || post.users?.[0]?.avatar_url || '/placeholder.svg'
+
+      return {
+        id: post.id,
+        content: post.content,
+        imageUrl: post.image_url,
+        tags: post.tags,
+        isAiGenerated: post.is_ai_generated,
+        accuracyPercentage: post.accuracy_percentage,
+        createdAt: post.created_at,
+        updatedAt: post.updated_at,
+        walletAddress: post.wallet_address,
+        author: {
+          username: userInfo.name,
+          email: post.users?.[0]?.email || '',
+          avatar: avatarUrl
+        },
+        handle: userInfo.handle,
+        engagement: {
+          likes: likes?.filter(like => like.post_id === post.id).length || 0,
+          comments: comments?.filter(comment => comment.post_id === post.id).length || 0,
+          shares: post.shares_count || 0
+        }
       }
-    }))
+    })
 
     return NextResponse.json({ posts: formattedPosts })
   } catch (error) {
@@ -162,29 +194,33 @@ export async function GET(request: Request) {
 // Create a new post
 export async function POST(req: Request) {
   try {
-    const data = await req.json()
-    console.log("Post data:", data)
+    const settingsService = new SettingsService(true) // Use server-side Supabase client
+    const body = await req.json()
+    const { content, imageUrl, tags, isAiGenerated, accuracyPercentage, walletAddress } = body
+
+    console.log("Post data:", body)
     
     // Get wallet address from the request
-    const walletAddress = data.walletAddress
     if (!walletAddress) {
       return NextResponse.json(
         { error: 'Wallet address is required' },
         { status: 401 }
       )
     }
-
-    const supabase = createClient()
     
     const postData = {
       id: generateUUID(),
       wallet_address: walletAddress,
-      content: data.content,
+      content: content,
+      image_url: imageUrl,
+      tags: tags,
+      is_ai_generated: isAiGenerated,
+      accuracy_percentage: accuracyPercentage,
       created_at: new Date().toISOString(),
     }
     console.log("Inserting post data:", postData)
     
-    const { data: post, error } = await supabase
+    const { data: post, error } = await settingsService.getSupabase()
       .from('community_posts')
       .insert(postData)
       .select()
@@ -201,26 +237,41 @@ export async function POST(req: Request) {
     
     console.log('Successfully created post:', post)
     
-    // Get user info to return with the post
-    const { data: userData, error: userError } = await supabase
+    // Get user info from both users and user_profiles tables
+    const { data: userData, error: userError } = await settingsService.getSupabase()
       .from('users')
       .select('username, avatar_url')
       .eq('wallet_address', walletAddress)
       .single()
       
-    if (userError) {
+    if (userError && userError.code !== "PGRST116") {
       console.error('Error fetching user:', userError)
     }
+
+    // Try to get additional profile data
+    const { data: profileData, error: profileError } = await settingsService.getSupabase()
+      .from('user_profiles')
+      .select('username, avatar_url, bio')
+      .eq('wallet_address', walletAddress)
+      .single()
+
+    if (profileError && profileError.code !== "PGRST116") {
+      console.error('Error fetching profile:', profileError)
+    }
+
+    // Combine user and profile data, preferring profile data if available
+    const username = profileData?.username || userData?.username
+    const avatarUrl = profileData?.avatar_url || userData?.avatar_url || '/placeholder.svg'
     
     return NextResponse.json({
       ...post,
       author: {
-        username: userData?.username || null,
-        email: userData?.email || '',
-        avatar: userData?.avatar_url || null
+        username: username || null,
+        email: '',
+        avatar: avatarUrl
       },
-      avatar: userData?.avatar_url || '/placeholder.svg',
-      handle: userData?.username ? `@${userData.username.toLowerCase().replace(/\s+/g, "")}` : null,
+      avatar: avatarUrl,
+      handle: username ? `@${username.toLowerCase().replace(/\s+/g, "")}` : null,
       likes: 0,
       comments: 0,
       shares: 0,

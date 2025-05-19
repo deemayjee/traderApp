@@ -107,29 +107,25 @@ export function NewsFeed() {
         ) : (
           <div className="space-y-4">
             {displayedNews.map((item) => (
-              <div key={item.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-                <div className="flex items-start space-x-4">
+              <div key={item.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 w-full max-w-full overflow-hidden">
+                <div className="flex items-start gap-4 w-full">
                   {item.imageurl && (
                     <img
                       src={item.imageurl}
                       alt={item.title}
-                      className="w-20 h-20 object-cover rounded-lg"
+                      className="w-16 h-16 object-cover rounded-md flex-shrink-0"
                     />
                   )}
-                  <div className="flex-1">
-                    <h3 className="font-medium text-sm mb-1 dark:text-white">{item.title}</h3>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-medium text-sm mb-1 dark:text-white truncate" title={item.title}>{item.title}</h3>
                     <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 line-clamp-2">{item.body}</p>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <span className="text-xs text-gray-500 dark:text-gray-400">{item.source}</span>
-                        <span className="text-xs text-gray-400 dark:text-gray-500">
-                          {formatDistanceToNow(new Date(item.published_on * 1000))} ago
-                        </span>
-                      </div>
+                    <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground flex-wrap">
+                      <span>{item.source}</span>
+                      <span>{formatDistanceToNow(new Date(item.published_on * 1000))} ago</span>
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="text-xs text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200 p-0"
+                        className="text-xs text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200 p-0 ml-auto"
                         onClick={() => window.open(item.url, '_blank')}
                       >
                         Read more <ExternalLink size={12} className="ml-1" />

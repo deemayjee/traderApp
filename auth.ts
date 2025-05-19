@@ -1,8 +1,7 @@
-import { createClient } from '@/lib/supabase/server'
+import { supabaseAdmin } from '@/lib/supabase/server-admin'
 
 export async function auth() {
-  const supabase = createClient()
-  const { data: { session }, error } = await supabase.auth.getSession()
+  const { data: { session }, error } = await supabaseAdmin.auth.getSession()
   
   if (error || !session) {
     return null

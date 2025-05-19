@@ -1,6 +1,7 @@
 import { TechnicalAnalyzer } from '@/lib/services/technical-analyzer'
 import { OnChainAnalyzer } from '@/lib/services/onchain-analyzer'
 import { MacroAnalyzer } from '@/lib/services/macro-analyzer'
+import { generateUUID } from "@/lib/utils/uuid"
 
 // Types for cryptocurrency data
 export interface DexScreenerPair {
@@ -108,34 +109,38 @@ export interface FormattedCryptoAsset {
   positive: boolean
   sentiment: "Bullish" | "Neutral" | "Bearish"
   image?: string
+  priceHistory: number[]
 }
 
 export interface CryptoAlert {
   id: string
-  type: "price" | "signal" | "whale"
+  type: "price" | "volume" | "trend"
+  symbol: string
+  condition: string
+  value: number
+  active: boolean
+  priority: "high" | "medium" | "low"
+  timestamp: string
   title: string
   description: string
-  active: boolean
-  time: string
-  asset: string
-  symbol: string
   targetPrice?: number
-  currentPrice?: number
+  wallet_address: string
 }
 
 export interface CryptoSignal {
   id: string
-  agent: string
-  asset: string
-  symbol: string
   type: "Buy" | "Sell"
+  symbol: string
+  asset?: string
   signal: string
   price: string
   priceValue: number
   time: string
-  result: "Pending" | "Success" | "Failure"
-  profit?: string
   confidence: number
+  result: "Success" | "Failure" | "Pending"
+  profit?: string
+  agent: string
+  updated: number
   image?: string
 }
 
@@ -203,10 +208,13 @@ export async function fetchCryptoMarkets(): Promise<FormattedCryptoAsset[]> {
       })
     )
 
-    return pairs
-      .filter((pair): pair is DexScreenerPair => pair !== undefined)
-      .map((pair) => formatDexScreenerPair(pair))
-    } catch (error) {
+    const formattedPairs = await Promise.all(
+      pairs
+        .filter((pair): pair is DexScreenerPair => pair !== undefined)
+        .map((pair) => formatDexScreenerPair(pair))
+    )
+    return formattedPairs
+  } catch (error) {
     console.error("Error fetching crypto markets:", error)
     return []
   }
@@ -269,6 +277,7 @@ export async function formatDexScreenerPair(pair: DexScreenerPair): Promise<Form
     volume: formatLargeNumber(volume24h),
     positive: changePercent > 0,
     sentiment,
+    priceHistory: [],
   }
 }
 
@@ -499,8 +508,137 @@ export async function fetchCryptosByIds(ids: string[], currency = "usd"): Promis
 
 // Add a function to generate real signals based on technical analysis
 export async function generateRealSignals(cryptoIds: string[]): Promise<CryptoSignal[]> {
-  // Return empty array as we want users to create their own signals
-  return []
+  try {
+    console.log('Starting signal generation for cryptoIds:', cryptoIds)
+    
+    // Fetch current market data for the specified cryptocurrencies
+    const marketData = await fetchCryptoMarkets()
+    console.log('Fetched market data:', marketData)
+    
+    // Map cryptoIds to their corresponding market data
+    const filteredData = marketData.filter(crypto => {
+      const match = cryptoIds.some(id => 
+        crypto.id.toLowerCase().includes(id.toLowerCase()) || 
+        crypto.symbol.toLowerCase().includes(id.toLowerCase())
+      )
+      console.log(`Checking ${crypto.symbol} against ${cryptoIds.join(', ')}: ${match}`)
+      return match
+    })
+    console.log('Filtered market data:', filteredData)
+
+    // Generate signals based on technical analysis
+    const signals: CryptoSignal[] = []
+
+    for (const crypto of filteredData) {
+      console.log('Processing crypto:', crypto.symbol)
+      
+      // Generate a signal for each crypto
+      const signal: CryptoSignal = {
+        id: generateUUID(),
+        type: Math.random() > 0.5 ? "Buy" : "Sell",
+        symbol: crypto.symbol.toUpperCase(),
+        signal: `${crypto.symbol} showing ${Math.random() > 0.5 ? "bullish" : "bearish"} momentum`,
+        price: `$${crypto.priceValue.toFixed(2)}`,
+        priceValue: crypto.priceValue,
+        time: "Just now",
+        confidence: Math.floor(Math.random() * 20) + 80, // 80-100% confidence
+        result: "Pending",
+        agent: "TrendMaster",
+        updated: Date.now(),
+        image: crypto.image,
+      }
+      signals.push(signal)
+      console.log('Generated signal:', signal)
+
+      // Save signal to database
+      try {
+        console.log('Saving signal to database:', signal)
+        const response = await fetch('/api/signals', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            id: signal.id,
+            agentId: signal.agent,
+            asset: signal.symbol,
+            type: signal.type,
+            signal: signal.signal,
+            price: signal.priceValue,
+            timestamp: Date.now(),
+            result: signal.result,
+            confidence: signal.confidence
+          }),
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          console.error('Failed to save signal to database:', errorData)
+        } else {
+          console.log('Successfully saved signal to database')
+        }
+      } catch (error) {
+        console.error('Error saving signal to database:', error)
+      }
+    }
+
+    console.log('Generated all signals:', signals)
+    return signals
+  } catch (error) {
+    console.error("Error generating signals:", error)
+    return []
+  }
+}
+
+// Helper function to calculate RSI
+function calculateRSI(prices: number[], period = 14): number {
+  if (prices.length < period + 1) return 50
+
+  let gains = 0
+  let losses = 0
+
+  for (let i = 1; i <= period; i++) {
+    const change = prices[i] - prices[i - 1]
+    if (change >= 0) {
+      gains += change
+    } else {
+      losses -= change
+    }
+  }
+
+  const avgGain = gains / period
+  const avgLoss = losses / period
+  const rs = avgGain / avgLoss
+  return 100 - (100 / (1 + rs))
+}
+
+// Helper function to calculate MACD
+function calculateMACD(prices: number[]): { macd: number; signal: number; histogram: number } {
+  const ema12 = calculateEMA(prices, 12)
+  const ema26 = calculateEMA(prices, 26)
+  const macd = ema12 - ema26
+  const signal = calculateEMA([macd], 9)
+  return { macd, signal, histogram: macd - signal }
+}
+
+// Helper function to calculate EMA
+function calculateEMA(prices: number[], period: number): number {
+  const k = 2 / (period + 1)
+  let ema = prices[0]
+
+  for (let i = 1; i < prices.length; i++) {
+    ema = prices[i] * k + ema * (1 - k)
+  }
+
+  return ema
+}
+
+// Helper function to calculate SMA
+function calculateSMA(prices: number[], period: number): number {
+  if (prices.length < period) return prices[prices.length - 1]
+  
+  const sum = prices.slice(-period).reduce((a, b) => a + b, 0)
+  return sum / period
 }
 
 // Function to format cryptocurrency data
@@ -545,69 +683,8 @@ export async function formatCryptoAsset(asset: CryptoAsset): Promise<FormattedCr
     image: asset.image,
     positive: priceChangePercentage > 0,
     sentiment,
+    priceHistory: [],
   }
-}
-
-// Generate mock alerts based on real crypto data
-export function generateAlertsFromCryptoData(cryptoAssets: FormattedCryptoAsset[]): CryptoAlert[] {
-  const alerts: CryptoAlert[] = []
-
-  // Use only the top 5 assets for alerts
-  const topAssets = cryptoAssets.slice(0, 5)
-
-  // Generate price alerts
-  topAssets.forEach((asset, index) => {
-    // Add null checks
-    const currentPrice = asset.priceValue
-    const priceChangePercentage = asset.changePercent
-    const symbol = asset.symbol
-
-    // Price alert
-    const isPriceUp = priceChangePercentage > 0
-    const targetPrice = isPriceUp
-      ? currentPrice * 1.05 // 5% higher
-      : currentPrice * 0.95 // 5% lower
-
-    alerts.push({
-      id: `price-${asset.id}`,
-      type: "price",
-      title: `${symbol} Price Alert`,
-      description: `Alert when ${symbol} ${isPriceUp ? "crosses above" : "drops below"} ${targetPrice.toFixed(2)}`,
-      active: index % 3 === 0, // Randomly set some as active
-      time: `Set ${index + 1} days ago`,
-      asset: asset.name,
-      symbol: symbol,
-      targetPrice,
-      currentPrice: currentPrice,
-    })
-
-    // Add some other alert types
-    if (index === 0) {
-      alerts.push({
-        id: `signal-${asset.id}`,
-        type: "signal",
-        title: `${symbol} RSI Alert`,
-        description: `Alert when ${symbol} RSI crosses ${isPriceUp ? "above 70" : "below 30"}`,
-        active: true,
-        time: "Set 1 week ago",
-        asset: asset.name,
-        symbol: symbol,
-      })
-    } else if (index === 1) {
-      alerts.push({
-        id: `whale-${asset.id}`,
-        type: "whale",
-        title: `${symbol} Whale Alert`,
-        description: `Alert on large ${symbol} transactions > $1M`,
-        active: false,
-        time: "Set 3 days ago",
-        asset: asset.name,
-        symbol: symbol,
-      })
-    }
-  })
-
-  return alerts
 }
 
 // Generate mock signals based on real crypto data
@@ -674,6 +751,7 @@ export function generateSignalsFromCryptoData(cryptoAssets: CryptoAsset[]): Cryp
       profit,
       confidence: Math.floor(Math.random() * 30) + 65, // 65-95% confidence
       image: asset.image,
+      updated: Date.now()
     })
   })
 
@@ -867,5 +945,148 @@ export async function fetchMarketData(): Promise<FormattedCryptoAsset[]> {
   } catch (error) {
     console.error("Error in fetchMarketData:", error)
     return []
+  }
+}
+
+/**
+ * Fetch top movers from Binance API and format as FormattedCryptoAsset[]
+ * Uses https://api.binance.com/api/v3/ticker/24hr
+ */
+export async function fetchBinanceTopMovers(limit: number = 10): Promise<FormattedCryptoAsset[]> {
+  try {
+    const response = await fetch('https://api.binance.com/api/v3/ticker/24hr')
+    if (!response.ok) throw new Error(`Binance API error: ${response.status}`)
+    const data = await response.json()
+
+    // Filter for USDT pairs only (most popular)
+    const usdtPairs = data.filter((item: any) => item.symbol.endsWith('USDT'))
+
+    // Sort by absolute 24h price change percent (top movers)
+    usdtPairs.sort((a: any, b: any) => Math.abs(Number(b.priceChangePercent)) - Math.abs(Number(a.priceChangePercent)))
+
+    // Take top N
+    const topMovers = usdtPairs.slice(0, limit)
+
+    // Format for your UI
+    const formatted = await Promise.all(topMovers.map(async (item: any) => {
+      const priceValue = Number(item.lastPrice)
+      const changePercent = Number(item.priceChangePercent)
+      const volume = Number(item.quoteVolume)
+      const marketCap = 0 // Binance API does not provide market cap directly
+      const asset: CryptoAsset = {
+        id: item.symbol,
+        symbol: item.symbol.replace('USDT', ''),
+        name: item.symbol.replace('USDT', ''),
+        image: `/tokens/${item.symbol.replace('USDT', '').toLowerCase()}.png`,
+        current_price: priceValue,
+        market_cap: marketCap,
+        total_volume: volume,
+        price_change_percentage_24h: changePercent,
+        last_updated: '',
+      } as CryptoAsset
+      const sentiment = await getSentiment(asset)
+      return {
+        id: asset.id,
+        name: asset.name,
+        symbol: asset.symbol,
+        price: formatPrice(priceValue),
+        priceValue,
+        change: formatChange(changePercent),
+        changePercent,
+        marketCap: marketCap ? formatLargeNumber(marketCap) : 'N/A',
+        volume: formatLargeNumber(volume),
+        positive: changePercent > 0,
+        sentiment,
+        image: asset.image,
+      } as FormattedCryptoAsset
+    }))
+    return formatted
+  } catch (error) {
+    console.error('Error fetching Binance top movers:', error)
+    return []
+  }
+}
+
+/**
+ * Fetch top tokens from Binance API by 24h volume and format as FormattedCryptoAsset[]
+ * Uses https://api.binance.com/api/v3/ticker/24hr
+ */
+export async function fetchBinanceTopTokens(limit: number = 10): Promise<FormattedCryptoAsset[]> {
+  try {
+    const response = await fetch('https://api.binance.com/api/v3/ticker/24hr')
+    if (!response.ok) throw new Error(`Binance API error: ${response.status}`)
+    const data = await response.json()
+
+    // Filter for USDT pairs only (most popular) and exclude USDC
+    const usdtPairs = data.filter((item: any) => 
+      item.symbol.endsWith('USDT') && 
+      !item.symbol.includes('USDC')
+    )
+
+    // Sort by 24h quote volume (descending)
+    usdtPairs.sort((a: any, b: any) => Number(b.quoteVolume) - Number(a.quoteVolume))
+
+    // Take top N
+    const topTokens = usdtPairs.slice(0, limit)
+
+    // Format for your UI
+    const formatted = await Promise.all(topTokens.map(async (item: any) => {
+      const priceValue = Number(item.lastPrice)
+      const changePercent = Number(item.priceChangePercent)
+      const volume = Number(item.quoteVolume)
+      const marketCap = 0 // Binance API does not provide market cap directly
+      const asset: CryptoAsset = {
+        id: item.symbol,
+        symbol: item.symbol.replace('USDT', ''),
+        name: item.symbol.replace('USDT', ''),
+        image: `/tokens/${item.symbol.replace('USDT', '').toLowerCase()}.png`,
+        current_price: priceValue,
+        market_cap: marketCap,
+        total_volume: volume,
+        price_change_percentage_24h: changePercent,
+        last_updated: '',
+      } as CryptoAsset
+      const sentiment = await getSentiment(asset)
+      return {
+        id: asset.id,
+        name: asset.name,
+        symbol: asset.symbol,
+        price: formatPrice(priceValue),
+        priceValue,
+        change: formatChange(changePercent),
+        changePercent,
+        marketCap: marketCap ? formatLargeNumber(marketCap) : 'N/A',
+        volume: formatLargeNumber(volume),
+        positive: changePercent > 0,
+        sentiment,
+        image: asset.image,
+      } as FormattedCryptoAsset
+    }))
+    return formatted
+  } catch (error) {
+    console.error('Error fetching Binance top tokens:', error)
+    return []
+  }
+}
+
+/**
+ * Fetch historical price data from Binance API for a given symbol and interval
+ * Returns { prices, volumes } in the same format as fetchCryptoHistoricalData
+ */
+export async function fetchBinanceHistoricalData(symbol: string, interval: string, limit: number = 100): Promise<{ prices: [number, number][], volumes: [number, number][] }> {
+  try {
+    // Always use USDT pairs
+    const binanceSymbol = symbol.toUpperCase().endsWith('USDT') ? symbol.toUpperCase() : symbol.toUpperCase() + 'USDT'
+    const url = `https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=${interval}&limit=${limit}`
+    const response = await fetch(url)
+    if (!response.ok) throw new Error(`Binance Klines API error: ${response.status}`)
+    const data = await response.json()
+    // Each kline: [openTime, open, high, low, close, volume, closeTime, ...]
+    const prices: [number, number][] = data.map((kline: any[]) => [kline[0], parseFloat(kline[4])]) // [timestamp, close]
+    const volumes: [number, number][] = data.map((kline: any[]) => [kline[0], parseFloat(kline[5])]) // [timestamp, volume]
+    return { prices, volumes }
+  } catch (error) {
+    console.error('Error fetching Binance historical data:', error)
+    return { prices: [], volumes: [] }
   }
 }

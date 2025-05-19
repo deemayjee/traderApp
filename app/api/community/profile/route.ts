@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { SettingsService } from '@/lib/services/settings-service'
 
-export async function GET(req: Request) {
+export const dynamic = 'force-dynamic' // This ensures the route is dynamic
+
+export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(req.url)
-    const address = searchParams.get('address')
-    const currentUserAddress = searchParams.get('currentUserAddress')
+    const url = new URL(request.url)
+    const address = url.searchParams.get('address')
+    const currentUserAddress = url.searchParams.get('currentUserAddress')
     
     if (!address) {
       return NextResponse.json(
@@ -13,11 +15,11 @@ export async function GET(req: Request) {
         { status: 400 }
       )
     }
-    
-    const supabase = createClient()
+
+    const settingsService = new SettingsService(true) // Use server-side Supabase client
     
     // Get user profile data
-    const { data: profile, error: profileError } = await supabase
+    const { data: profile, error: profileError } = await settingsService.getSupabase()
       .from('user_profiles')
       .select('username, avatar_url, bio, wallet_address')
       .eq('wallet_address', address)
@@ -32,7 +34,7 @@ export async function GET(req: Request) {
     }
     
     // Get follow stats
-    const { data: stats, error: statsError } = await supabase
+    const { data: stats, error: statsError } = await settingsService.getSupabase()
       .from('community_user_follow_stats')
       .select('followers_count, following_count, posts_count')
       .eq('wallet_address', address)
@@ -45,7 +47,7 @@ export async function GET(req: Request) {
     // Check if current user follows this profile
     let isFollowing = false
     if (currentUserAddress && currentUserAddress !== address) {
-      const { data: followData, error: followError } = await supabase
+      const { data: followData, error: followError } = await settingsService.getSupabase()
         .from('community_follows')
         .select()
         .eq('follower_wallet', currentUserAddress)

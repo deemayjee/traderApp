@@ -1,4 +1,7 @@
-import { createServerClient } from '@supabase/ssr'
+import { supabaseAdmin } from '@/lib/supabase/server-admin'
+import { NextAuthOptions } from "next-auth"
+import { WalletAdapter } from "@/lib/wallet-adapter"
+import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 
 type User = {
@@ -10,21 +13,7 @@ type User = {
 
 export async function auth(): Promise<User | null> {
   try {
-    const cookieStore = cookies()
-    
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value
-          },
-        },
-      }
-    )
-    
-    const { data: { session } } = await supabase.auth.getSession()
+    const { data: { session } } = await supabaseAdmin.auth.getSession()
     
     if (!session?.user) {
       return null
@@ -34,7 +23,7 @@ export async function auth(): Promise<User | null> {
     const walletAddress = session.user.id
     
     // Get user profile info
-    const { data: userData, error } = await supabase
+    const { data: userData, error } = await supabaseAdmin
       .from('users')
       .select(`
         wallet_address,
@@ -60,7 +49,110 @@ export async function auth(): Promise<User | null> {
       profile: userData.user_profiles
     }
   } catch (error) {
-    console.error('Error in auth function:', error)
+    let errMsg = 'Unknown error';
+    if (typeof error === 'string') errMsg = error;
+    else if (error && typeof error === 'object' && 'message' in error) errMsg = (error as any).message;
+    else errMsg = String(error);
+    console.error('Error in auth function:', errMsg);
+    return null
+  }
+}
+
+export const authOptions: NextAuthOptions = {
+  providers: [
+    {
+      id: "wallet",
+      name: "Wallet",
+      type: "credentials",
+      credentials: {
+        address: { label: "Wallet Address", type: "text" },
+        signature: { label: "Signature", type: "text" },
+      },
+      async authorize(credentials) {
+        if (!credentials?.address || !credentials?.signature) {
+          return null
+        }
+
+        // Verify the signature
+        const isValid = await WalletAdapter.verifySignature(
+          credentials.address,
+          credentials.signature
+        )
+
+        if (!isValid) {
+          return null
+        }
+
+        return {
+          id: credentials.address,
+          address: credentials.address,
+        }
+      },
+    },
+  ],
+  session: {
+    strategy: "jwt",
+  },
+  callbacks: {
+    async jwt({ token, user }) {
+      if (user) {
+        token.address = user.address
+      }
+      return token
+    },
+    async session({ session, token }) {
+      if (token) {
+        session.user.address = String(token.address)
+      }
+      return session
+    },
+  },
+  pages: {
+    signIn: "/auth/signin",
+  },
+}
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
+export async function verifyAuth(token: string): Promise<string | null> {
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser(token)
+    
+    if (error || !user) {
+      return null
+    }
+
+    return user.id
+  } catch (error) {
+    console.error('Error verifying auth:', error)
+    return null
+  }
+}
+
+export async function getSession() {
+  const cookieStore = cookies()
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value
+        },
+      },
+    }
+  )
+
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    return session
+  } catch (error) {
+    console.error('Error:', error)
     return null
   }
 } 

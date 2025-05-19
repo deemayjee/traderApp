@@ -20,7 +20,7 @@ export function TradingFeed() {
     },
     {
       id: 2,
-      author: "CryptoSage AI",
+      author: "Pally Traders",
       isAI: true,
       avatar: "/placeholder.svg?height=40&width=40",
       time: "4h ago",

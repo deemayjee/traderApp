@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-import { auth } from '@/auth'
+import { SettingsService } from '@/lib/services/settings-service'
 import { generateUUID } from '@/lib/utils/uuid'
 import { getRelativeTime } from '@/lib/utils/date-formatter'
+import { Database } from '@/types/supabase'
+
+type Comment = Database['public']['Tables']['community_comments']['Row']
+type User = Database['public']['Tables']['users']['Row']
 
 // Get comments for a post
 export async function GET(req: Request) {
@@ -17,14 +20,14 @@ export async function GET(req: Request) {
       )
     }
     
-    const supabase = createClient()
+    const settingsService = new SettingsService(true) // Use server-side Supabase client
     
     // Query the comments table with user data
-    const { data: comments, error } = await supabase
+    const { data: comments, error } = await settingsService.getSupabase()
       .from('community_comments')
       .select(`
         *,
-        users (
+        users!community_comments_wallet_address_fkey (
           username,
           avatar_url
         )
@@ -40,10 +43,14 @@ export async function GET(req: Request) {
       )
     }
 
+    if (!comments) {
+      return NextResponse.json([])
+    }
+
     // Process comments to include user info
-    const processedComments = comments.map((comment: any) => {
+    const processedComments = comments.map((comment: Comment & { users: User | null }) => {
       const username = comment.users?.username
-      const avatarUrl = comment.users?.avatar_url
+      const avatarUrl = comment.users?.avatar_url || '/placeholder.svg'
       const walletAddress = comment.wallet_address
       
       return {
@@ -55,12 +62,12 @@ export async function GET(req: Request) {
         author: {
           username: username || `User ${walletAddress.substring(0, 4)}...${walletAddress.substring(-4)}`,
           address: walletAddress,
-          avatar: avatarUrl || '/placeholder.svg'
+          avatar: avatarUrl
         },
         handle: username 
           ? `@${username.toLowerCase().replace(/\s+/g, "")}` 
           : `@${walletAddress.substring(0, 8)}`,
-        avatar: avatarUrl || '/placeholder.svg',
+        avatar: avatarUrl,
         likes: 0,
         userLiked: false,
         walletAddress: walletAddress
@@ -90,17 +97,17 @@ export async function POST(req: Request) {
       )
     }
     
-    const supabase = createClient()
+    const settingsService = new SettingsService(true) // Use server-side Supabase client
     
-    // Get user info
-    const { data: user } = await supabase
+    // Get user info from users table
+    const { data: user } = await settingsService.getSupabase()
       .from('users')
       .select('username, avatar_url')
       .eq('wallet_address', walletAddress)
       .single()
-    
+
     // Create the comment
-    const { data: comment, error } = await supabase
+    const { data: comment, error } = await settingsService.getSupabase()
       .from('community_comments')
       .insert({
         post_id: postId,
@@ -121,7 +128,7 @@ export async function POST(req: Request) {
     
     // Use username and avatar from user data
     const username = user?.username
-    const avatarUrl = user?.avatar_url
+    const avatarUrl = user?.avatar_url || '/placeholder.svg'
     
     return NextResponse.json({
       id: comment.id,
@@ -132,12 +139,12 @@ export async function POST(req: Request) {
       author: {
         username: username || `User ${walletAddress.substring(0, 4)}...${walletAddress.substring(-4)}`,
         address: walletAddress,
-        avatar: avatarUrl || '/placeholder.svg'
+        avatar: avatarUrl
       },
       handle: username 
         ? `@${username.toLowerCase().replace(/\s+/g, "")}` 
         : `@${walletAddress.substring(0, 8)}`,
-      avatar: avatarUrl || '/placeholder.svg',
+      avatar: avatarUrl,
       likes: 0,
       userLiked: false,
       walletAddress: comment.wallet_address
@@ -165,10 +172,10 @@ export async function DELETE(req: Request) {
       )
     }
     
-    const supabase = createClient()
+    const settingsService = new SettingsService(true) // Use server-side Supabase client
     
     // First verify the comment exists and belongs to the user
-    const { data: comment, error: fetchError } = await supabase
+    const { data: comment, error: fetchError } = await settingsService.getSupabase()
       .from('community_comments')
       .select('wallet_address')
       .eq('id', commentId)
@@ -191,7 +198,7 @@ export async function DELETE(req: Request) {
     }
     
     // Delete the comment
-    const { error: deleteError } = await supabase
+    const { error: deleteError } = await settingsService.getSupabase()
       .from('community_comments')
       .delete()
       .eq('id', commentId)
