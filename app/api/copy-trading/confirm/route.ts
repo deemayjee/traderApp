@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server"
-import { Connection, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js"
+import { Connection, PublicKey, LAMPORTS_PER_SOL, Keypair } from "@solana/web3.js"
 import { createClient } from "@supabase/supabase-js"
 import { executeAIWalletCopyTrade } from "@/lib/services/ai-copy-trade"
+import { TokenLockService } from "@/lib/services/token-lock"
+import { PostgrestError } from "@supabase/supabase-js"
+import { AIWalletService } from "@/lib/services/ai-wallet-service"
+import { getAssociatedTokenAddress, getAccount } from "@solana/spl-token"
 
 // Initialize Solana connection with longer commitment
 const connection = new Connection(
@@ -17,6 +21,9 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
+
+// Initialize token lock service
+const tokenLockService = new TokenLockService(connection)
 
 export async function POST(req: Request) {
   try {
@@ -51,92 +58,36 @@ export async function POST(req: Request) {
     }
 
     if (!tx) {
-      // If transaction doesn't exist, try to confirm it
-      let confirmation;
-      let retries = 3;
-      while (retries > 0) {
-        try {
-          console.log(`Attempting to confirm transaction (${retries} retries left)...`)
-          confirmation = await connection.confirmTransaction(signature, 'confirmed')
-          if (confirmation.value.err) {
-            console.error("Transaction failed:", confirmation.value.err)
-            return NextResponse.json({ error: "User transaction failed or not confirmed" }, { status: 400 })
-          }
-          console.log("Transaction confirmed successfully!")
-          break;
-        } catch (error) {
-          console.error(`Confirmation attempt failed:`, error)
-          retries--;
-          if (retries === 0) {
-            // If we've exhausted retries, check one last time if the transaction exists
-            tx = await connection.getTransaction(signature, { 
-              commitment: 'confirmed',
-              maxSupportedTransactionVersion: 0
-            })
-            if (!tx) {
-              tx = await connection.getTransaction(signature, { 
-                commitment: 'finalized',
-                maxSupportedTransactionVersion: 0
-              })
-            }
-            if (!tx) {
-              console.error("Transaction not found after all attempts")
-              return NextResponse.json({ 
-                error: "Transaction not found. It may have failed or is still processing.",
-                signature
-              }, { status: 400 })
-            }
-          }
-          console.log(`Waiting 5 seconds before retry ${retries}...`)
-          await new Promise(resolve => setTimeout(resolve, 5000))
-        }
-      }
+      console.error("Transaction not found")
+      return NextResponse.json(
+        { error: "Transaction not found" },
+        { status: 404 }
+      )
     }
 
-    // If we have a transaction, check if it failed
-    if (tx?.meta?.err) {
+    if (tx.meta?.err) {
       console.error("Transaction failed:", tx.meta.err)
-      return NextResponse.json({ error: "User transaction failed" }, { status: 400 })
+      return NextResponse.json(
+        { error: "Transaction failed", details: tx.meta.err },
+        { status: 400 }
+      )
     }
 
-    // If this is a regular token sale (aiAmount is 0), we don't need to do AI copy trade
-    if (aiAmount === 0) {
-      console.log("Regular token sale confirmed, no AI copy trade needed")
-      return NextResponse.json({
-        message: "Token sale completed successfully",
-        details: {
-          inputTokenAddress,
-          outputTokenAddress,
-          inputTokenSymbol,
-          outputTokenSymbol,
-          inputAmount,
-          userWallet,
-          signature
-        }
-      })
-    }
-
-    // Only proceed with AI copy trade if aiAmount is greater than 0
-    console.log("Starting AI copy trade process...")
-    
     // 2. Get AI wallet
-    console.log("Fetching AI wallet...")
     const { data: aiWallet, error: aiWalletError } = await supabase
-      .from('ai_wallets')
-      .select('ai_wallet_address')
-      .eq('wallet_address', userWallet)
+      .from("ai_wallets")
+      .select("*")
+      .eq("wallet_address", userWallet)
       .single()
 
-    if (aiWalletError) {
-      console.error("Error fetching AI wallet:", aiWalletError)
+    if (aiWalletError || !aiWallet) {
+      console.error("Error fetching AI wallet:", aiWalletError as PostgrestError)
       return NextResponse.json(
         { error: "Failed to fetch AI wallet" },
         { status: 500 }
       )
     }
 
-    // 3. Execute AI wallet's copy trade
-    console.log("Executing AI copy trade...")
     try {
       // Check AI wallet balance first
       const aiWalletPubkey = new PublicKey(aiWallet.ai_wallet_address)
@@ -155,6 +106,16 @@ export async function POST(req: Request) {
         }, { status: 400 })
       }
 
+      // Create token lock for AI copy trades
+      let lockResult = null;
+      
+      // Get the AI wallet's token account balance BEFORE the trade
+      const tokenMintPubkey = new PublicKey(outputTokenAddress);
+      const aiATA = await getAssociatedTokenAddress(tokenMintPubkey, aiWalletPubkey);
+      const beforeTradeBalance = await getAccount(connection, aiATA);
+      const beforeTradeAmount = Number(beforeTradeBalance.amount);
+      
+      // Execute the AI trade
       const aiTrade = await executeAIWalletCopyTrade({
         userWallet,
         inputTokenAddress,
@@ -169,22 +130,73 @@ export async function POST(req: Request) {
         throw new Error("AI trade execution failed - no signature returned")
       }
 
-      // Verify the AI trade transaction
-      const aiTx = await connection.getTransaction(aiTrade.signature, { 
-        commitment: 'confirmed',
-        maxSupportedTransactionVersion: 0
-      })
+      // Wait for transaction confirmation with retries
+      let aiTx = null;
+      let retries = 0;
+      const maxRetries = 5;
+      const retryDelay = 2000; // 2 seconds
+
+      while (retries < maxRetries) {
+        try {
+          // Wait for confirmation
+          await connection.confirmTransaction(aiTrade.signature, 'confirmed');
+          
+          // Get transaction details
+          aiTx = await connection.getTransaction(aiTrade.signature, { 
+            commitment: 'confirmed',
+            maxSupportedTransactionVersion: 0
+          });
+
+          if (aiTx) {
+            break;
+          }
+        } catch (error) {
+          console.log(`Retry ${retries + 1}/${maxRetries} - Waiting for transaction confirmation...`);
+        }
+
+        retries++;
+        if (retries < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+        }
+      }
+
       if (!aiTx) {
-        throw new Error("AI trade transaction not found")
+        throw new Error("AI trade transaction not found after multiple retries")
       }
 
       if (aiTx.meta?.err) {
         throw new Error(`AI trade transaction failed: ${aiTx.meta.err}`)
       }
 
-      // Continue with storing trades in database...
+      // Get the AI wallet's token account balance AFTER the trade
+      const afterTradeBalance = await getAccount(connection, aiATA);
+      const afterTradeAmount = Number(afterTradeBalance.amount);
+      
+      // Calculate the exact amount received from this trade
+      const tradeReceivedAmount = afterTradeAmount - beforeTradeAmount;
+      
+      if (tradeReceivedAmount > 0) {
+        try {
+          console.log("Creating token lock for AI trade with amount:", tradeReceivedAmount, "raw units");
+          const { keypair } = await AIWalletService.getAIWallet(userWallet)
+          
+          lockResult = await tokenLockService.createTokenLock({
+            userWallet: aiWallet.ai_wallet_address,
+            tokenMint: outputTokenAddress,
+            amount: tradeReceivedAmount, // Only lock the amount received from this trade
+            lockPeriod: 10, // 10 days lock period
+            decimals: outputDecimals
+          }, keypair)
+          
+          console.log("Token lock created:", lockResult)
+        } catch (lockError: any) {
+          console.error("Error creating token lock:", lockError)
+          // Don't fail the whole process if lock creation fails
+          // Just log the error and continue
+        }
+      }
 
-      // 4. Store both trades in the database
+      // Store both trades in the database with lock info
       console.log("Storing trades in database...")
       const startDate = new Date()
       const endDate = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000) // 10 days from now
@@ -204,7 +216,7 @@ export async function POST(req: Request) {
         )
       }
 
-      // Insert the copy trade
+      // Insert the copy trade with lock info
       const { data: copyTrade, error: dbError } = await supabase
         .from("copy_trades")
         .insert({
@@ -221,7 +233,10 @@ export async function POST(req: Request) {
           user_trade_signature: signature,
           ai_trade_signature: aiTrade.signature,
           entry_price: aiTrade.price ? aiTrade.price / Math.pow(10, outputDecimals) : 0,
-          ai_wallet_address: aiWallet.ai_wallet_address
+          ai_wallet_address: aiWallet.ai_wallet_address,
+          lock_id: lockResult?.lockId,
+          pda_address: lockResult?.pdaAddress,
+          locked_amount: tradeReceivedAmount
         })
         .select()
         .single()
@@ -253,21 +268,23 @@ export async function POST(req: Request) {
           aiTradeSignature: aiTrade.signature,
           entryPrice: aiTrade.price ? aiTrade.price / Math.pow(10, outputDecimals) : 0,
           priceImpact: aiTrade.priceImpact,
-          liquidityInfo: aiTrade.liquidityInfo
+          liquidityInfo: aiTrade.liquidityInfo,
+          lockId: lockResult?.lockId,
+          pdaAddress: lockResult?.pdaAddress
         }
       })
-    } catch (error) {
-      console.error("Error in /api/copy-trading/confirm:", error)
-      const errorResponse = {
-        error: error instanceof Error ? error.message : "Failed to confirm and copy trade"
-      }
-      return NextResponse.json(errorResponse, { status: 500 })
+    } catch (error: any) {
+      console.error("Error in copy trade process:", error)
+      return NextResponse.json(
+        { error: "Failed to process copy trade", details: error.message },
+        { status: 500 }
+      )
     }
-  } catch (error) {
-    console.error("Error in /api/copy-trading/confirm:", error)
-    const errorResponse = {
-      error: error instanceof Error ? error.message : "Failed to confirm and copy trade"
-    }
-    return NextResponse.json(errorResponse, { status: 500 })
+  } catch (error: any) {
+    console.error("Error in copy trade confirmation:", error)
+    return NextResponse.json(
+      { error: "Failed to confirm copy trade", details: error.message },
+      { status: 500 }
+    )
   }
 } 

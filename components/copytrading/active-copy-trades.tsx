@@ -4,12 +4,15 @@ import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useToast } from "@/components/ui/use-toast"
 import { useWalletAuth } from "@/components/auth/wallet-context"
-import { Loader2, AlertTriangle, CheckCircle2, XCircle, Copy } from "lucide-react"
+import { Loader2, AlertTriangle, CheckCircle2, XCircle, Copy, Lock as LockIcon, Unlock as UnlockIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { SellToken } from "@/components/copytrading/sell-token"
 import { useWalletTokens } from "@/hooks/use-wallet-tokens"
+import { Connection, PublicKey } from "@solana/web3.js"
+import { TokenLockService } from "@/lib/services/token-lock"
+import { ReleaseTokensButton } from "@/components/copy-trading/ReleaseTokensButton"
 
 interface CopyTrade {
   id: string
@@ -33,6 +36,16 @@ interface CopyTrade {
   ai_pnl?: number
   created_at: string
   updated_at: string
+  lock_id?: string
+  pda_address?: string
+  locked_amount: number
+}
+
+interface ProcessedTokenAccount {
+  mint: string;
+  amount: number;
+  decimals: number;
+  formattedAmount: string;
 }
 
 export function ActiveCopyTrades() {
@@ -46,40 +59,84 @@ export function ActiveCopyTrades() {
   const [showAll, setShowAll] = useState(false)
   const { toast } = useToast()
   const { user } = useWalletAuth()
-  const { assets: walletAssets } = useWalletTokens();
+  const { assets: walletAssets } = useWalletTokens()
+  const [lockStatuses, setLockStatuses] = useState<Record<string, boolean>>({})
+  const [lockTimes, setLockTimes] = useState<Record<string, number>>({})
+  const [selectedPosition, setSelectedPosition] = useState<'user' | 'ai'>('user')
 
   const ITEMS_PER_PAGE = 3
 
-  useEffect(() => {
-    const fetchTrades = async () => {
-      if (!user?.wallet?.address) return
+  // Initialize Solana connection
+  const connection = new Connection(
+    process.env.NEXT_PUBLIC_RPC_URL || "https://api.mainnet-beta.solana.com"
+  );
+  const tokenLockService = new TokenLockService(connection);
 
-      try {
-        const response = await fetch(`/api/copy-trading/active?userWallet=${user.wallet.address}`)
-        if (!response.ok) {
-          throw new Error('Failed to fetch active trades')
-        }
+  const fetchTrades = async () => {
+    if (!user?.wallet?.address) return
 
-        const data = await response.json()
-        setTrades(data.trades)
-      } catch (error) {
-        console.error('Error fetching active trades:', error)
-        toast({
-          title: "Error",
-          description: "Failed to fetch active trades",
-          variant: "destructive"
-        })
-      } finally {
-        setIsLoading(false)
+    try {
+      setIsLoading(true)
+      const response = await fetch(`/api/copy-trading/active?userWallet=${user.wallet.address}`)
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to fetch trades')
       }
+
+      setTrades(data.trades)
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to fetch trades",
+        variant: "destructive"
+      })
+    } finally {
+      setIsLoading(false)
     }
+  }
 
+  useEffect(() => {
     fetchTrades()
-    // Refresh every 30 seconds
-    const intervalId = setInterval(fetchTrades, 30000)
+  }, [user?.wallet?.address])
 
-    return () => clearInterval(intervalId)
-  }, [user?.wallet?.address, toast])
+  useEffect(() => {
+    const fetchLockStatuses = async () => {
+      const statuses: Record<string, boolean> = {};
+      const times: Record<string, number> = {};
+      
+      for (const trade of trades) {
+        if (trade.pda_address && trade.token_address) {
+          try {
+            // Check if the lock period has ended based on end_date
+            const currentTime = Date.now();
+            const endTime = new Date(trade.end_date).getTime();
+            const isLocked = currentTime < endTime;
+            statuses[trade.id] = isLocked;
+
+            // Calculate remaining time in days
+            const remainingTime = Math.max(0, (endTime - currentTime) / (24 * 60 * 60 * 1000));
+            times[trade.id] = remainingTime;
+          } catch (error) {
+            console.error(`Error checking lock status for trade ${trade.id}:`, error);
+            // Default to locked if there's an error
+            statuses[trade.id] = true;
+            times[trade.id] = 0;
+          }
+        }
+      }
+      
+      setLockStatuses(statuses);
+      setLockTimes(times);
+    };
+
+    if (trades.length > 0) {
+      fetchLockStatuses();
+      // Refresh lock statuses every minute
+      const intervalId = setInterval(fetchLockStatuses, 60000);
+      return () => clearInterval(intervalId);
+    }
+  }, [trades]);
 
   const getStatusBadge = (status: CopyTrade['status']) => {
     switch (status) {
@@ -94,11 +151,13 @@ export function ActiveCopyTrades() {
     }
   }
 
-  const formatAmount = (amount: number) => {
+  const formatAmount = (amount: number, decimals: number = 4) => {
+    if (amount === 0) return "0.00";
     return amount.toLocaleString(undefined, {
       minimumFractionDigits: 2,
-      maximumFractionDigits: 6
-    })
+      maximumFractionDigits: Math.min(decimals, 8),
+      useGrouping: true
+    });
   }
 
   const formatDate = (dateString: string) => {
@@ -155,6 +214,11 @@ export function ActiveCopyTrades() {
 
   const hasMore = !showAll && paginatedTrades.length < trades.length
 
+  // Update the asset finding code to use proper typing
+  const findAsset = (tokenAddress: string): ProcessedTokenAccount | undefined => {
+    return walletAssets.find((asset: ProcessedTokenAccount) => asset.mint === tokenAddress)
+  }
+
   if (isLoading) {
     return (
       <Card className="w-full">
@@ -185,17 +249,17 @@ export function ActiveCopyTrades() {
   }
 
   return (
-    <>
+    <div>
       <Card className="w-full">
         <CardHeader>
           <div className="flex justify-between items-center">
             <div>
-              <CardTitle>Active Copy Trades</CardTitle>
-              <CardDescription>Your current copy trading activities</CardDescription>
+              <CardTitle className="text-xl">Active Copy Trades</CardTitle>
+              <CardDescription>Monitor your current copy trading activities</CardDescription>
             </div>
             <div className="flex items-center space-x-2">
               <select
-                className="text-sm border rounded-md px-2 py-1"
+                className="text-sm border rounded-md px-2 py-1 bg-background"
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as 'date' | 'amount' | 'status')}
               >
@@ -218,30 +282,18 @@ export function ActiveCopyTrades() {
             {paginatedTrades.map((trade) => (
               <div
                 key={trade.id}
-                className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
+                className="flex flex-col p-4 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
               >
-                <div className="flex items-center space-x-4 flex-1">
-                  <div className="flex-shrink-0">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center space-x-3">
                     {getStatusBadge(trade.status)}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium truncate">{trade.token_symbol}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {formatDate(trade.created_at)}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-medium">{formatAmount(trade.user_amount)} SOL</p>
-                        <p className="text-sm text-muted-foreground">
-                          AI: {formatAmount(trade.ai_amount)} SOL
-                        </p>
-                      </div>
+                    <div>
+                      <h3 className="font-medium text-lg">{trade.token_symbol}</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Started {formatDate(trade.created_at)}
+                      </p>
                     </div>
                   </div>
-                </div>
-                <div className="flex items-center space-x-2 ml-4">
                   {trade.status === 'active' && (
                     <Button
                       variant="destructive"
@@ -255,15 +307,112 @@ export function ActiveCopyTrades() {
                     </Button>
                   )}
                 </div>
+
+                {trade.pda_address && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium">Your Holdings</p>
+                          <p className="text-sm text-muted-foreground">Current Position</p>
+                        </div>
+                        <div className="text-right">
+                          {(() => {
+                            const asset = findAsset(trade.token_address)
+                            return (
+                              <p className="font-mono font-medium">{asset?.formattedAmount?.split(' ')[0] || '0'}</p>
+                            );
+                          })()}
+                          <p className="text-sm text-muted-foreground">{trade.token_symbol}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium">AI Holdings</p>
+                            {trade.pda_address && (
+                              <div className="flex items-center gap-1">
+                                {lockStatuses[trade.id] ? (
+                                  <LockIcon className="h-3 w-3 text-yellow-500" />
+                                ) : (
+                                  <UnlockIcon className="h-3 w-3 text-green-500" />
+                                )}
+                                <span className="text-xs text-muted-foreground">
+                                  {lockStatuses[trade.id] 
+                                    ? `${Math.ceil(lockTimes[trade.id])} days left`
+                                    : 'Unlocked'}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground">Locked Position</p>
+                        </div>
+                        <div className="text-right">
+                          {(() => {
+                            const asset = findAsset(trade.token_address)
+                            const aiAmount = trade.locked_amount / 1e6;
+                            return (
+                              <p className="font-mono font-medium">{formatAmount(aiAmount, 4)}</p>
+                            );
+                          })()}
+                          <p className="text-sm text-muted-foreground">{trade.token_symbol}</p>
+                        </div>
+                      </div>
+                      
+                      {trade.pda_address && (
+                        <ReleaseTokensButton
+                          userWallet={trade.wallet_address}
+                          copyTradeId={trade.id}
+                          tokenSymbol={trade.token_symbol}
+                          amount={trade.ai_amount}
+                          decimals={walletAssets.find(asset => asset.mint === trade.token_address)?.decimals ?? 9}
+                          endDate={trade.end_date}
+                          onRelease={() => {
+                            // Refresh the trades list after successful release
+                            fetchTrades()
+                          }}
+                        />
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="mt-4 pt-4 border-t">
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center space-x-4">
+                      <div>
+                        <span className="text-muted-foreground">Trade ID:</span>
+                        <span className="ml-2 font-mono">{trade.id?.slice(0, 8) || 'N/A'}...</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">PDA:</span>
+                        <span className="ml-2 font-mono">{trade.pda_address ? truncateAddress(trade.pda_address) : 'N/A'}</span>
+                      </div>
+                    </div>
+                    {trade.pda_address && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => copyToClipboard(trade.pda_address as string)}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
               </div>
             ))}
           </div>
 
           {hasMore && (
-            <div className="mt-4 flex justify-center">
+            <div className="mt-6 flex justify-center">
               <Button
                 variant="outline"
                 onClick={() => setCurrentPage(prev => prev + 1)}
+                className="w-full max-w-xs"
               >
                 Load More
               </Button>
@@ -283,54 +432,70 @@ export function ActiveCopyTrades() {
         </CardContent>
       </Card>
 
+      {/* Sell Token Modal */}
       <Dialog open={showSellModal} onOpenChange={setShowSellModal}>
-        <DialogContent className="sm:max-w-[400px] p-0">
-          <DialogHeader className="px-6 pt-6 pb-2">
+        <DialogContent>
+          <DialogHeader>
             <DialogTitle>Sell {selectedTrade?.token_symbol}</DialogTitle>
-            <CardDescription>
-              You can sell your {selectedTrade?.token_symbol} tokens for SOL below.
-            </CardDescription>
+            <DialogDescription>
+              Choose which position you want to sell
+            </DialogDescription>
           </DialogHeader>
-          {selectedTrade && (() => {
-            const tokenAsset = walletAssets.find(
-              asset => asset.mint.toLowerCase() === selectedTrade.token_address.toLowerCase()
-            );
-            const sellTokenElement = (
-              <SellToken
-                tokenBalance={{
-                  mint: selectedTrade.token_address,
-                  amount: tokenAsset ? tokenAsset.amount : 0,
-                  decimals: tokenAsset ? tokenAsset.decimals : 9,
-                  symbol: selectedTrade.token_symbol
-                }}
-                hideTitle
-                hideDescription
-              />
-            );
-            return (
-              <div className="flex flex-col gap-0">
-                <div className="px-6 py-4">
-                  {!tokenAsset && (
-                    <div className="mb-2 text-sm text-red-500">
-                      Warning: You do not have any {selectedTrade.token_symbol} tokens in your wallet.
-                    </div>
-                  )}
-                  {sellTokenElement}
+          {selectedTrade && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div 
+                  className={`p-4 rounded-lg border cursor-pointer transition-colors ${
+                    selectedPosition === 'user' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
+                  }`}
+                  onClick={() => setSelectedPosition('user')}
+                >
+                  <h4 className="font-medium mb-2">Your Position</h4>
+                  <p className="text-sm text-muted-foreground">
+                    {(() => {
+                      const asset = findAsset(selectedTrade.token_address)
+                      return `Amount: ${asset?.formattedAmount || '0'} ${selectedTrade.token_symbol}`;
+                    })()}
+                  </p>
                 </div>
-                <div className="flex gap-2 px-6 pb-6">
-                  <Button
-                    variant="outline"
-                    className="flex-1"
-                    onClick={() => setShowSellModal(false)}
-                  >
-                    Cancel
-                  </Button>
+                <div 
+                  className={`p-4 rounded-lg border cursor-pointer transition-colors ${
+                    selectedPosition === 'ai' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
+                  }`}
+                  onClick={() => setSelectedPosition('ai')}
+                >
+                  <h4 className="font-medium mb-2">AI Position</h4>
+                  <p className="text-sm text-muted-foreground">
+                    {(() => {
+                      const asset = findAsset(selectedTrade.token_address)
+                      const aiAmount = selectedTrade.locked_amount / 1e6;
+                      return `Amount: ${formatAmount(aiAmount, 4)} ${selectedTrade.token_symbol}`;
+                    })()}
+                  </p>
+                  {lockStatuses[selectedTrade.id] && (
+                    <p className="text-sm text-yellow-500 mt-1">
+                      Locked for {Math.ceil(lockTimes[selectedTrade.id])} more days
+                    </p>
+                  )}
                 </div>
               </div>
-            );
-          })()}
+
+              {selectedPosition && (
+                <SellToken
+                  tokenBalance={{
+                    mint: selectedTrade.token_address,
+                    amount: (walletAssets.find(asset => asset.mint === selectedTrade.token_address)?.amount || 0),
+                    decimals: 9, // Assuming 9 decimals for most tokens
+                    symbol: selectedTrade.token_symbol
+                  }}
+                  hideTitle
+                  hideDescription
+                />
+              )}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   )
 } 

@@ -51,7 +51,6 @@
     "@solana/wallet-adapter-react-ui": "^0.9.37",
     "@solana/wallet-adapter-wallets": "^0.19.35",
     "@solana/web3.js": "^1.87.6",
-    "@streamflow/stream": "^8.0.1",
     "@supabase/auth-helpers-nextjs": "^0.10.0",
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.49.4",
@@ -92,6 +91,7 @@
     "zustand": "^5.0.3"
   },
   "devDependencies": {
+    "@types/bn.js": "^5.1.6",
     "@types/jest": "^29.5.14",
     "@types/node": "^20.17.32",
     "@types/react": "^18.2.55",

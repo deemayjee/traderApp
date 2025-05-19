@@ -72,40 +72,46 @@ export function CopyTradingStats() {
         throw new Error(`No price data for token ${tokenAddress}`)
       }
 
-      // Get the first SOL pair
-      const solPair = priceData.pairs.find((pair: any) => 
-        pair.quoteToken.symbol === 'SOL' || 
-        pair.baseToken.symbol === 'SOL'
+      // Sort pairs by liquidity and get the most liquid pair
+      const sortedPairs = priceData.pairs.sort((a: any, b: any) => 
+        Number(b.liquidity?.usd || 0) - Number(a.liquidity?.usd || 0)
       )
+      const bestPair = sortedPairs[0]
 
-      if (!solPair) {
-        console.error("No SOL pair found for token:", tokenAddress)
-        throw new Error(`No SOL pair found for token ${tokenAddress}`)
+      if (!bestPair) {
+        console.error("No pairs found for token:", tokenAddress)
+        throw new Error(`No price data for token ${tokenAddress}`)
       }
 
-      // Get the price in SOL
-      let priceInSol: number
-      if (solPair.quoteToken.symbol === 'SOL') {
-        priceInSol = Number(solPair.priceUsd)
-      } else {
-        priceInSol = 1 / Number(solPair.priceUsd)
-      }
-
-      console.log("Price calculation details:", {
-        pair: solPair.pairAddress,
-        priceUsd: solPair.priceUsd,
-        quoteToken: solPair.quoteToken.symbol,
-        baseToken: solPair.baseToken.symbol,
-        calculatedPrice: priceInSol,
-        timestamp: new Date().toISOString()
+      // Log detailed pair information
+      console.log("Selected trading pair details:", {
+        pairAddress: bestPair.pairAddress,
+        dexId: bestPair.dexId,
+        baseToken: {
+          address: bestPair.baseToken.address,
+          symbol: bestPair.baseToken.symbol,
+          name: bestPair.baseToken.name
+        },
+        quoteToken: {
+          address: bestPair.quoteToken.address,
+          symbol: bestPair.quoteToken.symbol,
+          name: bestPair.quoteToken.name
+        },
+        priceUsd: bestPair.priceUsd,
+        priceNative: bestPair.priceNative,
+        liquidity: bestPair.liquidity,
+        volume: bestPair.volume
       })
 
-      if (isNaN(priceInSol)) {
-        console.error("Invalid price data:", solPair)
+      // Use the USD price directly from DexScreener
+      const priceInUsd = Number(bestPair.priceUsd)
+      
+      if (isNaN(priceInUsd)) {
+        console.error("Invalid price data:", bestPair)
         throw new Error("Invalid price data")
       }
 
-      return priceInSol
+      return priceInUsd
     } catch (error) {
       console.error("Error fetching token price:", error)
       return 0
@@ -119,53 +125,82 @@ export function CopyTradingStats() {
 
     for (const trade of trades) {
       try {
-        console.log("Processing trade:", trade)
         const currentPrice = await getTokenPrice(trade.token_address)
         
         // If entry price is null, fetch it from the API
         let entryPrice = Number(trade.entry_price)
+        console.log("Entry price debug:", {
+          rawEntryPrice: trade.entry_price,
+          parsedEntryPrice: entryPrice
+        })
+        
         if (!entryPrice) {
-          // Make a request to get the entry price from the API
           const entryResponse = await fetch(`/api/copy-trading/trade-entry-price?tradeId=${trade.id}`)
           if (entryResponse.ok) {
             const entryData = await entryResponse.json()
             entryPrice = entryData.entryPrice
           } else {
-            // If we can't get the entry price, use current price but log a warning
             console.warn(`No entry price found for trade ${trade.id}, using current price`)
             entryPrice = currentPrice
           }
         }
 
-        const userAmount = Number(trade.user_amount)
-        const aiAmount = Number(trade.ai_amount)
+        // Get SOL price to convert entry price from SOL to USD
+        const solPriceResponse = await fetch(
+          `https://api.dexscreener.com/latest/dex/tokens/So11111111111111111111111111111111111111112?t=${Date.now()}`,
+          {
+            headers: {
+              'Accept': 'application/json',
+              'Cache-Control': 'no-cache'
+            }
+          }
+        )
+        const solPriceData = await solPriceResponse.json()
+        const solPrice = Number(solPriceData.pairs[0]?.priceUsd || 0)
 
-        console.log("Trade values:", {
+        // Get the trading pair details
+        const pairResponse = await fetch(
+          `https://api.dexscreener.com/latest/dex/tokens/${trade.token_address}?t=${Date.now()}`,
+          {
+            headers: {
+              'Accept': 'application/json',
+              'Cache-Control': 'no-cache'
+            }
+          }
+        )
+        const pairData = await pairResponse.json()
+        const bestPair = pairData.pairs.sort((a: any, b: any) => 
+          Number(b.liquidity?.usd || 0) - Number(a.liquidity?.usd || 0)
+        )[0]
+
+        // Entry price is in SOL terms, convert to USD
+        const entryPriceInUsd = entryPrice * solPrice
+
+        console.log("Price conversion debug:", {
+          entryPriceInSol: entryPrice,
+          solPrice,
+          entryPriceInUsd,
           currentPrice,
-          entryPrice,
-          userAmount,
-          aiAmount
+          pairQuoteToken: bestPair.quoteToken.symbol,
+          pairPriceNative: bestPair.priceNative,
+          pairPriceUsd: bestPair.priceUsd
         })
 
-        // Calculate PNL based on price change
-        const priceChange = currentPrice - entryPrice
-        const userTradePNL = priceChange * userAmount
-        const aiTradePNL = priceChange * aiAmount
+        // Convert amounts from SOL to USD
+        const userAmountInSol = Number(trade.user_amount)
+        const aiAmountInSol = Number(trade.ai_amount)
+        const userAmountInUsd = userAmountInSol * solPrice
+        const aiAmountInUsd = aiAmountInSol * solPrice
+
+        // Calculate PNL based on price change in USD
+        const priceChange = currentPrice - entryPriceInUsd
+        const userTradePNL = priceChange * userAmountInUsd
+        const aiTradePNL = priceChange * aiAmountInUsd
 
         userPNL += userTradePNL
         aiPNL += aiTradePNL
-        totalAllocation += userAmount
+        totalAllocation += userAmountInSol // Keep total allocation in SOL
 
-        console.log(`Trade ${trade.id} PNL calculation:`, {
-          tokenAddress: trade.token_address,
-          currentPrice,
-          entryPrice,
-          priceChange,
-          userAmount,
-          aiAmount,
-          userTradePNL,
-          aiTradePNL
-        })
       } catch (error) {
         console.error(`Error calculating PNL for trade ${trade.id}:`, error)
       }

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react"
 import { useWalletAuth } from "@/components/auth/wallet-context"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
@@ -75,7 +75,10 @@ export default function CopyTradingPage() {
   }
 
   const fetchTokenMetadata = async (address: string) => {
-    if (!address) return
+    if (!address) {
+      setIsLoadingToken(false)
+      return
+    }
     
     setIsLoadingToken(true)
     try {
@@ -87,6 +90,7 @@ export default function CopyTradingPage() {
       if (token) {
         setTokenName(token.name)
         setTokenSymbol(token.symbol)
+        setIsLoadingToken(false)
         return
       }
 
@@ -99,6 +103,7 @@ export default function CopyTradingPage() {
       if (raydiumToken) {
         setTokenName(raydiumToken.name)
         setTokenSymbol(raydiumToken.symbol)
+        setIsLoadingToken(false)
         return
       }
 
@@ -111,8 +116,9 @@ export default function CopyTradingPage() {
       toast.error("Failed to fetch token information")
       setTokenName("")
       setTokenSymbol("")
+    } finally {
+      setIsLoadingToken(false)
     }
-    setIsLoadingToken(false)
   }
 
   // Debounce token address changes
@@ -302,100 +308,127 @@ export default function CopyTradingPage() {
 
   return (
     <div className="container mx-auto py-8">
-      <div className="max-w-4xl mx-auto space-y-8">
+      <div className="max-w-7xl mx-auto space-y-8">
+        {/* Header Section */}
         <div className="text-center space-y-4">
-          <h1 className="text-3xl font-bold">AI Copy Trading</h1>
-          <p className="text-muted-foreground">
-            Create your AI trading partner and start copy trading with confidence
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">AI Copy Trading</h1>
+          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+            Create your AI trading partner and start copy trading with confidence. Let our advanced AI system help you make smarter trading decisions.
           </p>
         </div>
 
-        <div className="bg-muted/50 rounded-lg p-6">
-          <AIWalletCreator />
-        </div>
+        {/* Main Content Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Column - AI Wallet Creator and Stats */}
+          <div className="lg:col-span-1 space-y-6">
+            <div className="bg-muted/50 rounded-lg p-6 border border-border">
+              <h2 className="text-xl font-semibold mb-4">AI Trading Partner</h2>
+              <AIWalletCreator />
+            </div>
+            
+            {/* Stats Overview */}
+            <div className="space-y-4">
+              <CopyTradingStats />
+            </div>
+          </div>
 
-        <CopyTradingStats />
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Start New Copy Trade</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="tokenAddress">Token Address</Label>
-                <Input
-                  id="tokenAddress"
-                  value={tokenAddress}
-                  onChange={(e) => setTokenAddress(e.target.value)}
-                  placeholder="Enter token address"
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="tokenSymbol">Token</Label>
-                <Input
-                  id="tokenSymbol"
-                  value={tokenName ? `${tokenName} (${tokenSymbol})` : tokenSymbol}
-                  placeholder={isLoadingToken ? "Loading..." : "e.g., Wrapped SOL (SOL)"}
-                  disabled={isLoadingToken}
-                />
-                {isLoadingToken && (
-                  <div className="flex items-center text-sm text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    Fetching token information...
+          {/* Right Column - Trading Interface */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* New Trade Form */}
+            <Card className="border-border">
+              <CardHeader>
+                <CardTitle className="text-xl">Start New Copy Trade</CardTitle>
+                <CardDescription>Configure your trade parameters and start copying trades</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label htmlFor="tokenAddress">Token Address</Label>
+                    <Input
+                      id="tokenAddress"
+                      value={tokenAddress}
+                      onChange={(e) => setTokenAddress(e.target.value)}
+                      placeholder="Enter token address"
+                      className="font-mono"
+                    />
                   </div>
-                )}
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="userAmount">Your Amount (SOL)</Label>
-                <Input
-                  id="userAmount"
-                  type="number"
-                  value={userAmount}
-                  onChange={(e) => setUserAmount(e.target.value)}
-                  placeholder="Enter amount in SOL"
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="aiAmount">AI Copy Amount (SOL)</Label>
-                <Input
-                  id="aiAmount"
-                  type="number"
-                  value={aiAmount}
-                  onChange={(e) => setAiAmount(e.target.value)}
-                  placeholder="Enter AI copy amount"
-                />
-              </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="tokenSymbol">Token</Label>
+                    <Input
+                      id="tokenSymbol"
+                      value={tokenName ? `${tokenName} (${tokenSymbol})` : tokenSymbol}
+                      placeholder={isLoadingToken ? "Loading..." : "e.g., Wrapped SOL (SOL)"}
+                      disabled={isLoadingToken}
+                    />
+                    {isLoadingToken && (
+                      <div className="flex items-center text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        Fetching token information...
+                      </div>
+                    )}
+                  </div>
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="slippage">Slippage Tolerance (%)</Label>
-                <Input
-                  id="slippage"
-                  type="number"
-                  value={slippage}
-                  onChange={(e) => setSlippage(e.target.value)}
-                  placeholder="Enter slippage tolerance"
-                  min="0.1"
-                  max="100"
-                  step="0.1"
-                />
-                <p className="text-sm text-muted-foreground">Default: 1%. Higher values may result in worse prices but higher success rate.</p>
-              </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label htmlFor="userAmount">Your Amount (SOL)</Label>
+                    <Input
+                      id="userAmount"
+                      type="number"
+                      value={userAmount}
+                      onChange={(e) => setUserAmount(e.target.value)}
+                      placeholder="Enter amount in SOL"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="aiAmount">AI Copy Amount (SOL)</Label>
+                    <Input
+                      id="aiAmount"
+                      type="number"
+                      value={aiAmount}
+                      onChange={(e) => setAiAmount(e.target.value)}
+                      placeholder="Enter AI copy amount"
+                    />
+                  </div>
+                </div>
 
-              <Button 
-                className="w-full" 
-                onClick={handleStartCopyTrade}
-                disabled={!user?.wallet?.address}
-              >
-                Start Copy Trade
-              </Button>
-            </CardContent>
-          </Card>
+                <div className="space-y-2">
+                  <Label htmlFor="slippage">Slippage Tolerance (%)</Label>
+                  <div className="flex items-center space-x-2">
+                    <Input
+                      id="slippage"
+                      type="number"
+                      value={slippage}
+                      onChange={(e) => setSlippage(e.target.value)}
+                      placeholder="Enter slippage tolerance"
+                      min="0.1"
+                      max="100"
+                      step="0.1"
+                      className="flex-1"
+                    />
+                    <Button variant="outline" size="sm" onClick={() => setSlippage("1")}>
+                      Default (1%)
+                    </Button>
+                  </div>
+                  <p className="text-sm text-muted-foreground">Higher values may result in worse prices but higher success rate.</p>
+                </div>
 
-          <ActiveCopyTrades />
+                <Button 
+                  className="w-full" 
+                  onClick={handleStartCopyTrade}
+                  disabled={!user?.wallet?.address}
+                  size="lg"
+                >
+                  Start Copy Trade
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Active Trades */}
+            <ActiveCopyTrades />
+          </div>
         </div>
       </div>
 
@@ -455,7 +488,7 @@ export default function CopyTradingPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Existing Confirmation Dialog */}
+      {/* Confirmation Dialog */}
       <Dialog open={showConfirmation} onOpenChange={setShowConfirmation}>
         <DialogContent>
           <DialogHeader>
@@ -468,22 +501,27 @@ export default function CopyTradingPage() {
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <h4 className="font-medium">Trade Details</h4>
-              <div className="bg-muted/50 p-3 rounded-lg space-y-2">
-                <p className="text-sm">
-                  <span className="text-muted-foreground">Token:</span> {tokenSymbol}
-                </p>
-                <p className="text-sm font-mono">
-                  <span className="text-muted-foreground">Address:</span> {tokenAddress}
-                </p>
-                <p className="text-sm">
-                  <span className="text-muted-foreground">Your Amount:</span> {userAmount} SOL
-                </p>
-                <p className="text-sm">
-                  <span className="text-muted-foreground">AI Copy Amount:</span> {aiAmount} SOL
-                </p>
-                <p className="text-sm">
-                  <span className="text-muted-foreground">Slippage Tolerance:</span> {slippage}%
-                </p>
+              <div className="bg-muted/50 p-4 rounded-lg space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Token:</span>
+                  <span className="font-medium">{tokenSymbol}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Address:</span>
+                  <span className="font-mono text-sm">{tokenAddress}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Your Amount:</span>
+                  <span className="font-medium">{userAmount} SOL</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">AI Copy Amount:</span>
+                  <span className="font-medium">{aiAmount} SOL</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Slippage Tolerance:</span>
+                  <span className="font-medium">{slippage}%</span>
+                </div>
               </div>
             </div>
 
@@ -494,15 +532,15 @@ export default function CopyTradingPage() {
                 The AI will copy your trade with the specified amount. Make sure you have enough SOL in your wallet.
               </AlertDescription>
             </Alert>
-          </div>
 
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setShowConfirmation(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleConfirmCopyTrade} disabled={isProcessing}>
-              {isProcessing ? "Processing..." : "Confirm"}
-            </Button>
+            <div className="flex justify-end space-x-2">
+              <Button variant="outline" onClick={() => setShowConfirmation(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleConfirmCopyTrade}>
+                Confirm Trade
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
