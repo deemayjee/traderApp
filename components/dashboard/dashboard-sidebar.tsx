@@ -38,6 +38,12 @@ export function DashboardSidebar() {
       icon: <Activity className="h-5 w-5" />,
       gradient: "from-emerald-500 to-teal-500"
     },
+    {
+      title: "Automation",
+      href: "/ai-agents/automation",
+      icon: <Zap className="h-5 w-5" />,
+      gradient: "from-orange-500 to-red-500"
+    },
   ]
 
   return (

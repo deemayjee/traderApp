@@ -31,15 +31,13 @@ export function UserProfileProvider({ children }: { children: React.ReactNode })
     }
 
     try {
-      const { data, error } = await supabase
-        .from('user_profiles')
-        .select('username, avatar_url, wallet_address')
-        .eq('wallet_address', user.address)
-        .single()
-
-      if (error) throw error
-
-      setProfile(data)
+      // For now, just create a basic profile from wallet address
+      // since we removed the user_profiles table
+      setProfile({
+        wallet_address: user.address,
+        username: undefined,
+        avatar_url: undefined
+      })
     } catch (error) {
       console.error('Error fetching user profile:', error)
       setProfile(null)

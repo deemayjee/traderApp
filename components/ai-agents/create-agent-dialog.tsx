@@ -25,13 +25,14 @@ import { useWalletAuth } from "@/components/auth/wallet-context"
 import { hyperliquidWalletService } from "@/lib/services/hyperliquid-wallet-service"
 import { toast } from "sonner"
 import { hyperliquidService, TradingPair } from '@/lib/services/hyperliquid-service'
+import { agentSupabase } from "@/lib/services/agent-supabase"
 
 export type AIAgentType = "Technical Analysis" | "On-chain Analysis" | "Macro Analysis"
 
 export interface AIAgent {
   id: string
   name: string
-  type?: AIAgentType
+  type: AIAgentType
   description: string
   active?: boolean
   accuracy?: number
@@ -214,10 +215,26 @@ export function CreateAgentDialog({ open, onOpenChange, onAgentCreated }: Create
   const handleCreateAgent = async () => {
     setIsSubmitting(true)
     try {
+      // Map strategy to type for database compatibility
+      const getTypeFromStrategy = (strategy: string): AIAgentType => {
+        switch (strategy) {
+          case 'technical':
+          case 'trend_following':
+            return 'Technical Analysis'
+          case 'onchain':
+            return 'On-chain Analysis'
+          case 'macro':
+            return 'Macro Analysis'
+          default:
+            return 'Technical Analysis'
+        }
+      }
+
       // Deploy agent to Hyperliquid
       const newAgent: AIAgent = {
         id: `agent_${Date.now()}`,
         name: formData.name || 'Unnamed Agent',
+        type: getTypeFromStrategy(formData.strategy || 'technical'),
         description: formData.description || '',
         strategy: formData.strategy || 'trend_following',
         maxPositionSize: formData.maxPositionSize || 100,
@@ -227,15 +244,21 @@ export function CreateAgentDialog({ open, onOpenChange, onAgentCreated }: Create
         leverage: formData.leverage || 1,
         focusAssets: formData.focusAssets || [],
         tradingPairs: formData.tradingPairs || [],
-        isActive: false,
+        active: true, // Enable the agent by default
+        isActive: true, // Enable automation by default
+        riskTolerance: formData.riskTolerance || 50,
+        indicators: ['RSI', 'MACD'], // Default indicators
         totalPnl: 0,
         winRate: 0,
         totalTrades: 0,
         createdAt: new Date().toISOString()
       }
 
-      // Simulate agent deployment
-      await new Promise(resolve => setTimeout(resolve, 2000))
+      // Save agent to database
+      if (user?.address) {
+        await agentSupabase.saveAgent(newAgent, user.address)
+        toast.success('Agent created successfully!')
+      }
       
       onAgentCreated?.(newAgent)
       onOpenChange(false)

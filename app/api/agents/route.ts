@@ -27,18 +27,26 @@ export async function POST(request: Request) {
         name: agent.name,
         type: agent.type,
         description: agent.description,
-        is_active: agent.active,
+        is_active: agent.active !== undefined ? agent.active : agent.isActive !== undefined ? agent.isActive : true,
         wallet_address: wallet_address,
         configuration: {
           custom: agent.custom,
           riskTolerance: agent.riskTolerance,
           focusAssets: agent.focusAssets,
           indicators: agent.indicators,
+          maxPositionSize: agent.maxPositionSize,
+          leverage: agent.leverage,
+          tradingPairs: agent.tradingPairs,
+          tradingEnabled: agent.tradingEnabled,
+          strategy: agent.strategy,
         },
         performance_metrics: {
           accuracy: agent.accuracy,
           signals: agent.signals,
           lastSignal: agent.lastSignal,
+          totalPnl: agent.totalPnl,
+          winRate: agent.winRate,
+          totalTrades: agent.totalTrades,
         },
       }, {
         onConflict: 'id'

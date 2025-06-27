@@ -141,32 +141,38 @@ export type Database = {
         Row: {
           id: string
           name: string
+          type: string
           description: string | null
+          is_active: boolean
           wallet_address: string
+          configuration: Record<string, any> | null
+          performance_metrics: Record<string, any> | null
           created_at: string
           updated_at: string
-          status: 'active' | 'inactive'
-          config: Record<string, any> | null
         }
         Insert: {
           id?: string
           name: string
+          type: string
           description?: string | null
+          is_active?: boolean
           wallet_address: string
+          configuration?: Record<string, any> | null
+          performance_metrics?: Record<string, any> | null
           created_at?: string
           updated_at?: string
-          status?: 'active' | 'inactive'
-          config?: Record<string, any> | null
         }
         Update: {
           id?: string
           name?: string
+          type?: string
           description?: string | null
+          is_active?: boolean
           wallet_address?: string
+          configuration?: Record<string, any> | null
+          performance_metrics?: Record<string, any> | null
           created_at?: string
           updated_at?: string
-          status?: 'active' | 'inactive'
-          config?: Record<string, any> | null
         }
       }
     }

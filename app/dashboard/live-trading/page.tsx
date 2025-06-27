@@ -1,48 +1,33 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Progress } from "@/components/ui/progress"
 import { Switch } from "@/components/ui/switch"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Progress } from "@/components/ui/progress"
 import { 
-  Activity, 
   TrendingUp, 
   TrendingDown, 
-  DollarSign, 
   Bot, 
-  AlertTriangle, 
-  Eye, 
-  EyeOff,
-  Play,
-  Pause,
-  Square,
-  Settings,
-  RefreshCw,
-  Filter,
-  BarChart3,
-  PieChart,
-  Target,
-  Shield,
-  Zap,
-  Clock,
-  Wallet,
-  ArrowUpRight,
-  ArrowDownRight,
-  MoreHorizontal,
-  ExternalLink,
-  Wallet2,
-  Timer,
-  Layers,
+  Wallet2, 
+  Target, 
+  Gauge,
   MonitorSpeaker,
-  Gauge
+  BarChart3,
+  Activity,
+  DollarSign,
+  AlertTriangle,
+  Clock,
+  Zap,
+  Brain,
+  RefreshCw
 } from "lucide-react"
-import { hyperliquidService, HyperliquidPosition, HyperliquidOrder } from "@/lib/services/hyperliquid-service"
 import { useWalletAuth } from "@/components/auth/wallet-context"
+import { agentSupabase } from "@/lib/services/agent-supabase"
+import { hyperliquidService } from "@/lib/services/hyperliquid-service"
+import { AIAgent } from "@/components/ai-agents/create-agent-dialog"
+import { toast } from "sonner"
 
 interface TradingMetrics {
   totalValue: number
@@ -53,20 +38,6 @@ interface TradingMetrics {
   winRate: number
   avgHoldTime: string
   riskScore: number
-}
-
-interface AgentCard {
-  id: string
-  name: string
-  status: 'active' | 'paused' | 'error'
-  pnl: number
-  pnlPercent: number
-  trades: number
-  winRate: number
-  pair: string
-  lastAction: string
-  timeAgo: string
-  riskLevel: 'low' | 'medium' | 'high'
 }
 
 interface LivePosition {
@@ -86,123 +57,176 @@ interface LivePosition {
 }
 
 export default function LiveTradingPage() {
-  const [metrics, setMetrics] = useState<TradingMetrics>({
-    totalValue: 12450.80,
-    dailyPnL: 342.15,
-    dailyPnLPercent: 2.83,
-    activePositions: 7,
-    totalTrades: 23,
-    winRate: 73.9,
-    avgHoldTime: '4m 32s',
-    riskScore: 6.2
-  })
-
-  const [agents, setAgents] = useState<AgentCard[]>([
-    {
-      id: '1',
-      name: 'Alpha Scalper',
-      status: 'active',
-      pnl: 156.80,
-      pnlPercent: 3.2,
-      trades: 8,
-      winRate: 87.5,
-      pair: 'ETH-USD',
-      lastAction: 'LONG @ $2,524',
-      timeAgo: '2m',
-      riskLevel: 'medium'
-    },
-    {
-      id: '2',
-      name: 'Momentum Hunter',
-      status: 'active',
-      pnl: 89.45,
-      pnlPercent: 1.8,
-      trades: 5,
-      winRate: 80.0,
-      pair: 'BTC-USD',
-      lastAction: 'SHORT @ $43,200',
-      timeAgo: '5m',
-      riskLevel: 'high'
-    },
-    {
-      id: '3',
-      name: 'Range Master',
-      status: 'paused',
-      pnl: -23.60,
-      pnlPercent: -0.5,
-      trades: 3,
-      winRate: 33.3,
-      pair: 'SOL-USD',
-      lastAction: 'CLOSED @ $98.50',
-      timeAgo: '12m',
-      riskLevel: 'low'
-    },
-    {
-      id: '4',
-      name: 'Arbitrage Pro',
-      status: 'active',
-      pnl: 67.30,
-      pnlPercent: 1.4,
-      trades: 12,
-      winRate: 91.7,
-      pair: 'AVAX-USD',
-      lastAction: 'LONG @ $24.80',
-      timeAgo: '1m',
-      riskLevel: 'low'
-    }
-  ])
-
-  const [positions, setPositions] = useState<LivePosition[]>([
-    {
-      id: '1',
-      symbol: 'ETH-USD',
-      side: 'long',
-      size: 2.5,
-      entryPrice: 2520,
-      currentPrice: 2534,
-      pnl: 35.00,
-      pnlPercent: 1.39,
-      leverage: 3,
-      margin: 2100,
-      liquidationPrice: 2180,
-      duration: '3m 45s',
-      agent: 'Alpha Scalper'
-    },
-    {
-      id: '2',
-      symbol: 'BTC-USD',
-      side: 'short',
-      size: 0.15,
-      entryPrice: 43200,
-      currentPrice: 43150,
-      pnl: 7.50,
-      pnlPercent: 0.12,
-      leverage: 5,
-      margin: 1296,
-      liquidationPrice: 45360,
-      duration: '7m 12s',
-      agent: 'Momentum Hunter'
-    },
-    {
-      id: '3',
-      symbol: 'AVAX-USD',
-      side: 'long',
-      size: 50,
-      entryPrice: 24.80,
-      currentPrice: 24.95,
-      pnl: 7.50,
-      pnlPercent: 0.60,
-      leverage: 2,
-      margin: 620,
-      liquidationPrice: 18.60,
-      duration: '1m 30s',
-      agent: 'Arbitrage Pro'
-    }
-  ])
-
-  const [isLoading, setIsLoading] = useState(false)
-  const [liveMode, setLiveMode] = useState(true)
   const { user } = useWalletAuth()
+  const [agents, setAgents] = useState<AIAgent[]>([])
+  const [positions, setPositions] = useState<LivePosition[]>([])
+  const [metrics, setMetrics] = useState<TradingMetrics>({
+    totalValue: 0,
+    dailyPnL: 0,
+    dailyPnLPercent: 0,
+    activePositions: 0,
+    totalTrades: 0,
+    winRate: 0,
+    avgHoldTime: "0h",
+    riskScore: 0
+  })
+  const [isLoading, setIsLoading] = useState(true)
+  const [liveMode, setLiveMode] = useState(true)
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date())
+
+  useEffect(() => {
+    if (!user?.address) return
+    
+    const loadLiveTradingData = async () => {
+      try {
+        setIsLoading(true)
+        
+        // Load user's agents
+        const userAgents = await agentSupabase.getAllAgents(user.address)
+        setAgents(userAgents)
+        
+        // Load positions from Hyperliquid
+        const hyperliquidPositions = await hyperliquidService.getPositions(user.address)
+        
+        // Transform positions to include additional calculated data
+        const transformedPositions: LivePosition[] = hyperliquidPositions.map((pos, index) => ({
+          id: `pos-${index}`,
+          symbol: pos.symbol,
+          side: pos.side,
+          size: pos.size,
+          entryPrice: pos.entryPrice,
+          currentPrice: pos.entryPrice + (pos.unrealizedPnl / pos.size), // Approximate current price
+          pnl: pos.unrealizedPnl,
+          pnlPercent: ((pos.unrealizedPnl / (pos.entryPrice * pos.size)) * 100),
+          leverage: pos.leverage,
+          margin: (pos.entryPrice * pos.size) / pos.leverage,
+          liquidationPrice: pos.side === 'long' 
+            ? pos.entryPrice * (1 - (0.9 / pos.leverage))
+            : pos.entryPrice * (1 + (0.9 / pos.leverage)),
+          duration: calculateDuration(new Date()), // Would need actual position open time
+          agent: userAgents.find(a => a.focusAssets.includes(pos.symbol))?.name || 'Manual'
+        }))
+        
+        setPositions(transformedPositions)
+        
+        // Calculate metrics from real data
+        const calculatedMetrics = calculateMetrics(transformedPositions, userAgents)
+        setMetrics(calculatedMetrics)
+        
+        setLastUpdated(new Date())
+        
+      } catch (error) {
+        console.error('Error loading live trading data:', error)
+        toast.error('Failed to load trading data')
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    
+    loadLiveTradingData()
+    
+    // Set up real-time updates every 30 seconds
+    const interval = setInterval(() => {
+      if (liveMode) {
+        loadLiveTradingData()
+      }
+    }, 30000)
+    
+    return () => clearInterval(interval)
+  }, [user?.address, liveMode])
+
+  const calculateMetrics = (positions: LivePosition[], agents: AIAgent[]): TradingMetrics => {
+    const totalValue = positions.reduce((sum, pos) => sum + (pos.entryPrice * pos.size), 0)
+    const totalPnL = positions.reduce((sum, pos) => sum + pos.pnl, 0)
+    const activeAgents = agents.filter(a => a.active)
+    
+    // Estimate other metrics based on available data
+    const totalTrades = agents.reduce((sum, agent) => sum + (agent.signals || 0), 0)
+    const avgAccuracy = agents.length > 0 
+      ? agents.reduce((sum, agent) => sum + (agent.accuracy || 0), 0) / agents.length 
+      : 0
+    
+    return {
+      totalValue,
+      dailyPnL: totalPnL * 0.3, // Estimate daily as 30% of total
+      dailyPnLPercent: totalValue > 0 ? ((totalPnL * 0.3) / totalValue) * 100 : 0,
+      activePositions: positions.length,
+      totalTrades,
+      winRate: avgAccuracy,
+      avgHoldTime: calculateAverageHoldTime(positions),
+      riskScore: calculateRiskScore(positions, agents)
+    }
+  }
+
+  const calculateDuration = (openTime: Date): string => {
+    const now = new Date()
+    const diff = now.getTime() - openTime.getTime()
+    const hours = Math.floor(diff / (1000 * 60 * 60))
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
+    return `${hours}h ${minutes}m`
+  }
+
+  const calculateAverageHoldTime = (positions: LivePosition[]): string => {
+    if (positions.length === 0) return "0h"
+    
+    // For now, return a static estimate since we don't have open times
+    return "2h 15m"
+  }
+
+  const calculateRiskScore = (positions: LivePosition[], agents: AIAgent[]): number => {
+    if (positions.length === 0) return 0
+    
+    const avgLeverage = positions.reduce((sum, pos) => sum + pos.leverage, 0) / positions.length
+    const totalExposure = positions.reduce((sum, pos) => sum + (pos.size * pos.currentPrice), 0)
+    
+    // Simple risk scoring based on leverage and exposure
+    let riskScore = (avgLeverage / 10) * 3 // Leverage contribution (0-3)
+    riskScore += Math.min((totalExposure / 10000), 3) // Exposure contribution (0-3)
+    riskScore += Math.min(positions.length / 2, 4) // Position count contribution (0-4)
+    
+    return Math.min(Math.round(riskScore), 10)
+  }
+
+  const refreshData = async () => {
+    if (!user?.address) return
+    
+    setIsLoading(true)
+    try {
+      const hyperliquidPositions = await hyperliquidService.getPositions(user.address)
+      const userAgents = await agentSupabase.getAllAgents(user.address)
+      
+      // Update positions and metrics
+      const transformedPositions: LivePosition[] = hyperliquidPositions.map((pos, index) => ({
+        id: `pos-${index}`,
+        symbol: pos.symbol,
+        side: pos.side,
+        size: pos.size,
+        entryPrice: pos.entryPrice,
+        currentPrice: pos.entryPrice + (pos.unrealizedPnl / pos.size),
+        pnl: pos.unrealizedPnl,
+        pnlPercent: ((pos.unrealizedPnl / (pos.entryPrice * pos.size)) * 100),
+        leverage: pos.leverage,
+        margin: (pos.entryPrice * pos.size) / pos.leverage,
+        liquidationPrice: pos.side === 'long' 
+          ? pos.entryPrice * (1 - (0.9 / pos.leverage))
+          : pos.entryPrice * (1 + (0.9 / pos.leverage)),
+        duration: calculateDuration(new Date()),
+        agent: userAgents.find(a => a.focusAssets.includes(pos.symbol))?.name || 'Manual'
+      }))
+      
+      setPositions(transformedPositions)
+      setAgents(userAgents)
+      setMetrics(calculateMetrics(transformedPositions, userAgents))
+      setLastUpdated(new Date())
+      
+      toast.success('Data refreshed successfully')
+    } catch (error) {
+      console.error('Error refreshing data:', error)
+      toast.error('Failed to refresh data')
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -228,6 +252,25 @@ export default function LiveTradingPage() {
     return { label: 'Aggressive', color: 'text-red-600' }
   }
 
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Card className="w-full max-w-md text-center p-6">
+          <CardContent>
+            <Bot className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+            <h2 className="text-xl font-semibold mb-2">Connect Your Wallet</h2>
+            <p className="text-muted-foreground mb-4">
+              Please connect your wallet to view live trading data
+            </p>
+            <Button asChild>
+              <a href="/auth/login">Connect Wallet</a>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -240,6 +283,9 @@ export default function LiveTradingPage() {
             <p className="text-slate-600 dark:text-slate-400 mt-1">
               Real-time AI trading performance dashboard
             </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Last updated: {lastUpdated.toLocaleTimeString()}
+            </p>
           </div>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
@@ -247,9 +293,15 @@ export default function LiveTradingPage() {
               <span className="text-sm font-medium">{liveMode ? 'LIVE' : 'PAUSED'}</span>
             </div>
             <Switch checked={liveMode} onCheckedChange={setLiveMode} />
-            <Button variant="outline" className="bg-white dark:bg-slate-800">
-              <MonitorSpeaker className="w-4 h-4 mr-2" />
-              Stream
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={refreshData}
+              disabled={isLoading}
+              className="bg-white dark:bg-slate-800"
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+              Refresh
             </Button>
           </div>
         </div>
@@ -331,33 +383,33 @@ export default function LiveTradingPage() {
                   <div key={agent.id} className="p-4 rounded-xl bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-3">
-                        <div className={`w-3 h-3 rounded-full ${getStatusColor(agent.status)}`} />
+                        <div className={`w-3 h-3 rounded-full ${agent.active ? 'bg-emerald-500' : 'bg-gray-400'}`} />
                         <div>
                           <h3 className="font-semibold text-sm">{agent.name}</h3>
-                          <p className="text-xs text-slate-500">{agent.pair}</p>
+                          <p className="text-xs text-slate-500">{agent.focusAssets.join(', ')}</p>
                         </div>
                       </div>
-                      <Badge className={`text-xs ${getRiskColor(agent.riskLevel)}`}>
-                        {agent.riskLevel}
+                      <Badge className={`text-xs ${agent.riskTolerance && agent.riskTolerance > 70 ? 'text-red-600 bg-red-50' : agent.riskTolerance && agent.riskTolerance > 40 ? 'text-amber-600 bg-amber-50' : 'text-emerald-600 bg-emerald-50'}`}>
+                        {agent.riskTolerance && agent.riskTolerance > 70 ? 'high' : agent.riskTolerance && agent.riskTolerance > 40 ? 'medium' : 'low'}
                       </Badge>
                     </div>
                     
                     <div className="grid grid-cols-2 gap-4 mb-3">
                       <div>
-                        <p className="text-xs text-slate-500">P&L</p>
-                        <p className={`font-bold text-sm ${agent.pnl >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                          {agent.pnl >= 0 ? '+' : ''}${agent.pnl}
+                        <p className="text-xs text-slate-500">Accuracy</p>
+                        <p className="font-bold text-sm text-emerald-600">
+                          {agent.accuracy || 0}%
                         </p>
                       </div>
                       <div>
-                        <p className="text-xs text-slate-500">Win Rate</p>
-                        <p className="font-bold text-sm">{agent.winRate}%</p>
+                        <p className="text-xs text-slate-500">Signals</p>
+                        <p className="font-bold text-sm">{agent.signals || 0}</p>
                       </div>
                     </div>
                     
                     <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-600">{agent.lastAction}</span>
-                      <span className="text-slate-500">{agent.timeAgo} ago</span>
+                      <span className="text-slate-600">{agent.lastSignal || 'No signals yet'}</span>
+                      <span className="text-slate-500">{agent.active ? 'Active' : 'Inactive'}</span>
                     </div>
                   </div>
                 ))}

@@ -51,9 +51,7 @@ export default function AIAgents() {
       return
     }
     try {
-      // Save agent to database
-      await agentSupabase.saveAgent(newAgent, walletAddress)
-      
+      // Agent is already saved to database by the create dialog
       // Deploy agent to Hyperliquid for live trading
       if (newAgent.tradingEnabled) {
         await hyperliquidAgentService.deployAgent(newAgent)
@@ -150,8 +148,8 @@ export default function AIAgents() {
   )
 
   const activeAgents = agents.filter(agent => agent.active).length
-  const totalSignals = agents.reduce((sum, agent) => sum + agent.signals, 0)
-  const avgAccuracy = agents.length > 0 ? agents.reduce((sum, agent) => sum + agent.accuracy, 0) / agents.length : 0
+  const totalSignals = agents.reduce((sum, agent) => sum + (agent.signals || 0), 0)
+  const avgAccuracy = agents.length > 0 ? agents.reduce((sum, agent) => sum + (agent.accuracy || 0), 0) / agents.length : 0
 
   if (isLoading) {
     return (
@@ -326,12 +324,12 @@ export default function AIAgents() {
                 <p className="text-sm text-muted-foreground line-clamp-2">{agent.description}</p>
                 
                 <div className="flex items-center justify-between">
-                  <Badge variant={agent.accuracy >= 90 ? "default" : agent.accuracy >= 80 ? "secondary" : "destructive"}>
-                    {agent.accuracy}% Accuracy
+                  <Badge variant={(agent.accuracy || 0) >= 90 ? "default" : (agent.accuracy || 0) >= 80 ? "secondary" : "destructive"}>
+                    {agent.accuracy || 0}% Accuracy
                   </Badge>
                   <div className="flex items-center text-sm text-muted-foreground">
                     <Zap className="h-4 w-4 mr-1" />
-                    {agent.signals} signals
+                    {agent.signals || 0} signals
                   </div>
                 </div>
 
@@ -367,7 +365,7 @@ export default function AIAgents() {
       <CreateAgentDialog
         open={isCreateDialogOpen}
         onOpenChange={setIsCreateDialogOpen}
-        onCreateAgent={handleCreateAgent}
+        onAgentCreated={handleCreateAgent}
       />
     </div>
   )

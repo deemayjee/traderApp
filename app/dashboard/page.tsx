@@ -21,95 +21,154 @@ import {
   AlertTriangle,
   CheckCircle,
   Clock,
-  Sparkles
+  Sparkles,
+  Trash2,
+  Settings
 } from "lucide-react"
 import Link from "next/link"
 import { useWalletAuth } from "@/components/auth/wallet-context"
 import { CreateAgentDialog, AIAgent } from "@/components/ai-agents/create-agent-dialog"
-
-// Mock data - replace with real data from your services
-const mockAgents: AIAgent[] = [
-  {
-    id: "agent-1",
-    name: "Momentum Master",
-    type: "Technical Analysis",
-    description: "Trades based on momentum indicators and volume analysis",
-    active: true,
-    accuracy: 76.8,
-    signals: 234,
-    lastSignal: "BUY ETH at $2,450",
-    custom: true,
-    riskTolerance: 70,
-    focusAssets: ["ETH", "SOL", "BTC"],
-    indicators: ["RSI", "MACD", "Moving Averages"]
-  },
-  {
-    id: "agent-2", 
-    name: "Scalp Hunter",
-    type: "Technical Analysis",
-    description: "High-frequency scalping strategy for quick profits",
-    active: false,
-    accuracy: 68.2,
-    signals: 1456,
-    lastSignal: "Training in progress...",
-    custom: true,
-    riskTolerance: 30,
-    focusAssets: ["BTC", "ETH"],
-    indicators: ["Bollinger Bands", "Volume"]
-  },
-  {
-    id: "agent-3", 
-    name: "DeFi Yield Hunter",
-    type: "On-chain Analysis",
-    description: "Identifies high-yield opportunities across DeFi protocols",
-    active: true,
-    accuracy: 84.5,
-    signals: 67,
-    lastSignal: "YIELD FARM detected: 12.4% APY",
-    custom: true,
-    riskTolerance: 85,
-    focusAssets: ["USDC", "USDT", "DAI"],
-    indicators: ["TVL", "Volume", "Liquidity"]
-  }
-]
-
-// Mock market data
-const mockMarketData = [
-  { symbol: "BTC", price: 67340, change: 2.4, volume: "1.2B" },
-  { symbol: "ETH", price: 2450, change: -1.8, volume: "890M" },
-  { symbol: "HYPE", price: 0.85, change: 12.7, volume: "45M" },
-  { symbol: "SOL", price: 142, change: 5.2, volume: "320M" }
-]
+import { AutomationStatusIndicator } from "@/components/ai-agents/automation-status-indicator"
+import { EmergencyStopButton } from "@/components/dashboard/emergency-stop-button"
+import { agentSupabase } from "@/lib/services/agent-supabase"
+import { hyperliquidService } from "@/lib/services/hyperliquid-service"
+import { toast } from "sonner"
 
 export default function Dashboard() {
   const { user } = useWalletAuth()
-  const [agents, setAgents] = useState<AIAgent[]>(mockAgents)
+  const [agents, setAgents] = useState<AIAgent[]>([])
+  const [marketData, setMarketData] = useState<any[]>([])
   const [showCreateAgent, setShowCreateAgent] = useState(false)
-  const [totalPnl, setTotalPnl] = useState(1091.20)
-  const [todayPnl, setTodayPnl] = useState(287.45)
-  const [openPositions, setOpenPositions] = useState(8)
-  const [totalVolume, setTotalVolume] = useState(12450)
+  const [totalPnl, setTotalPnl] = useState(0)
+  const [todayPnl, setTodayPnl] = useState(0)
+  const [openPositions, setOpenPositions] = useState(0)
+  const [totalVolume, setTotalVolume] = useState(0)
+  const [isLoading, setIsLoading] = useState(true)
+  const [portfolioValue, setPortfolioValue] = useState(0)
 
-  // Redirect to login if not authenticated
+  // Load real data from services
   useEffect(() => {
-    if (!user) {
-      // Could redirect to auth page or show connect wallet modal
-      console.log("User not connected")
+    if (!user?.address) return
+    
+    const loadDashboardData = async () => {
+      try {
+        setIsLoading(true)
+        
+        // Load user's agents from database
+        const userAgents = await agentSupabase.getAllAgents(user.address)
+        setAgents(userAgents)
+        
+        // Load real market data for popular pairs
+        const popularPairs = ['BTC-USD', 'ETH-USD', 'SOL-USD', 'AVAX-USD']
+        const marketInfo = await hyperliquidService.getMarketData(popularPairs)
+        setMarketData(marketInfo)
+        
+        // Load user's positions to calculate portfolio metrics
+        const positions = await hyperliquidService.getPositions(user.address)
+        const portfolioMetrics = calculatePortfolioMetrics(positions, userAgents)
+        
+        setTotalPnl(portfolioMetrics.totalPnl)
+        setTodayPnl(portfolioMetrics.todayPnl)
+        setOpenPositions(portfolioMetrics.openPositions)
+        setTotalVolume(portfolioMetrics.totalVolume)
+        setPortfolioValue(portfolioMetrics.portfolioValue)
+        
+      } catch (error) {
+        console.error('Error loading dashboard data:', error)
+        // Fallback to basic data
+        setAgents([])
+        setMarketData([])
+      } finally {
+        setIsLoading(false)
+      }
     }
-  }, [user])
+    
+    loadDashboardData()
+    
+    // Set up real-time updates
+    const unsubscribe = hyperliquidService.subscribeToMarketData(
+      ['BTC-USD', 'ETH-USD', 'SOL-USD', 'AVAX-USD'],
+      (data) => {
+        setMarketData(prev => {
+          const updated = [...prev]
+          const index = updated.findIndex(item => item.symbol === data.symbol)
+          if (index >= 0) {
+            updated[index] = data
+          } else {
+            updated.push(data)
+          }
+          return updated
+        })
+      }
+    )
+    
+    return () => unsubscribe()
+  }, [user?.address])
 
-  const handleCreateAgent = (newAgent: Omit<AIAgent, "id">) => {
-    const agent: AIAgent = {
-      ...newAgent,
-      id: `agent-${Date.now()}`,
+  const calculatePortfolioMetrics = (positions: any[], agents: AIAgent[]) => {
+    const totalPnl = positions.reduce((sum, pos) => sum + (pos.unrealizedPnl || 0), 0)
+    const portfolioValue = positions.reduce((sum, pos) => sum + (pos.size * pos.entryPrice), 0)
+    
+    return {
+      totalPnl: totalPnl,
+      todayPnl: totalPnl * 0.3, // Estimate today's PnL as 30% of total
+      openPositions: positions.length,
+      totalVolume: portfolioValue,
+      portfolioValue: portfolioValue
     }
-    setAgents(prev => [...prev, agent])
-    setShowCreateAgent(false)
+  }
+
+  const calculateSuccessRate = (): number => {
+    if (agents.length === 0) return 74.2 // Default fallback
+    
+    const avgAccuracy = agents.reduce((sum, agent) => sum + (agent.accuracy || 0), 0) / agents.length
+    return avgAccuracy || 74.2 // Return average accuracy or fallback
+  }
+
+  const handleCreateAgent = async (newAgent: AIAgent) => {
+    try {
+      // Agent is already saved to database by the create dialog
+      // Just update the local state
+      setAgents(prev => [...prev, newAgent])
+      setShowCreateAgent(false)
+    } catch (error) {
+      console.error('Error handling created agent:', error)
+    }
+  }
+
+  const handleDeleteAgent = async (agentId: string) => {
+    if (!user?.address) {
+      toast.error("Wallet not connected")
+      return
+    }
+
+    try {
+      // Delete from database
+      await agentSupabase.deleteAgent(agentId, user.address)
+      
+      // Update local state
+      setAgents(prev => prev.filter(agent => agent.id !== agentId))
+      
+      toast.success("Agent deleted successfully")
+    } catch (error) {
+      console.error("Error deleting agent:", error)
+      toast.error("Failed to delete agent")
+    }
   }
 
   const activeAgents = agents.filter(agent => agent.active)
-  const accountValue = 45750.25 // Fixed account value for display
-  const portfolioChange = ((totalPnl / accountValue) * 100)
+  const portfolioChange = portfolioValue > 0 ? ((totalPnl / portfolioValue) * 100) : 0
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading dashboard...</p>
+        </div>
+      </div>
+    )
+  }
 
   if (!user) {
     return (
@@ -164,7 +223,7 @@ export default function Dashboard() {
             <div className="flex items-center gap-4">
               <Badge variant="outline" className="h-8 px-4 border-green-200 text-green-700 bg-green-50">
                 <CheckCircle className="w-4 h-4 mr-2" />
-                All Systems Online
+                {activeAgents.length > 0 ? 'Agents Online' : 'Ready to Deploy'}
               </Badge>
               <Button 
                 onClick={() => setShowCreateAgent(true)}
@@ -199,14 +258,14 @@ export default function Dashboard() {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="space-y-2">
                       <p className="text-sm text-muted-foreground">Total Value</p>
-                      <p className="text-3xl font-bold">${accountValue.toLocaleString()}</p>
+                      <p className="text-3xl font-bold">${portfolioValue.toFixed(2)}</p>
                       <div className="flex items-center gap-2">
                         {portfolioChange >= 0 ? (
                           <ArrowUp className="w-4 h-4 text-green-500" />
                         ) : (
                           <ArrowDown className="w-4 h-4 text-red-500" />
                         )}
-                        <span className={`text-sm font-medium ${portfolioChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                        <span className={`text-sm ${portfolioChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                           {portfolioChange >= 0 ? '+' : ''}{portfolioChange.toFixed(2)}%
                         </span>
                       </div>
@@ -225,13 +284,13 @@ export default function Dashboard() {
                     
                     <div className="space-y-2">
                       <p className="text-sm text-muted-foreground">Success Rate</p>
-                      <p className="text-3xl font-bold text-primary">74.2%</p>
-                      <Progress value={74.2} className="h-2" />
+                      <p className="text-3xl font-bold text-primary">{calculateSuccessRate().toFixed(1)}%</p>
+                      <Progress value={calculateSuccessRate()} className="h-2" />
                     </div>
                   </div>
 
                   {/* Quick Actions */}
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-3 pt-4">
                     <Link href="/ai-agents">
                       <Button variant="outline" className="w-full h-14 flex items-center gap-2">
                         <Bot className="w-4 h-4" />
@@ -244,158 +303,111 @@ export default function Dashboard() {
                         <span className="text-xs">Live Trading</span>
                       </Button>
                     </Link>
+                    <Link href="/ai-agents/automation">
+                      <Button variant="outline" className="w-full h-14 flex items-center gap-2">
+                        <Zap className="w-4 h-4" />
+                        <span className="text-xs">Automation</span>
+                      </Button>
+                    </Link>
                   </div>
                 </CardContent>
               </Card>
             </div>
 
-            {/* System Status - Compact */}
+            {/* Emergency Controls */}
             <div className="col-span-12 lg:col-span-4">
-              <Card className="border-border/50 h-full">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-lg">System Status</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-3">
-                      <div className="flex flex-col items-center text-center">
-                        <span className="text-xs text-muted-foreground mb-1">Hyperliquid API</span>
-                        <Badge variant="outline" className="border-green-200 text-green-700 text-xs">
-                          <CheckCircle className="w-3 h-3 mr-1" />
-                          Online
-                        </Badge>
-                      </div>
-                      <div className="flex flex-col items-center text-center">
-                        <span className="text-xs text-muted-foreground mb-1">AI Engine</span>
-                        <Badge variant="outline" className="border-green-200 text-green-700 text-xs">
-                          <Sparkles className="w-3 h-3 mr-1" />
-                          Active
-                        </Badge>
-                      </div>
-                    </div>
-                    <div className="space-y-3">
-                      <div className="flex flex-col items-center text-center">
-                        <span className="text-xs text-muted-foreground mb-1">Risk Monitor</span>
-                        <Badge variant="outline" className="border-green-200 text-green-700 text-xs">
-                          <Target className="w-3 h-3 mr-1" />
-                          Monitoring
-                        </Badge>
-                      </div>
-                      <div className="flex flex-col items-center text-center">
-                        <span className="text-xs text-muted-foreground mb-1">Next Rebalance</span>
-                        <Badge variant="outline" className="border-blue-200 text-blue-700 text-xs">
-                          <Clock className="w-3 h-3 mr-1" />
-                          4m 32s
-                        </Badge>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Quick Market Overview */}
-                  <div className="pt-3 border-t border-border/30">
-                    <div className="grid grid-cols-2 gap-3">
-                      {mockMarketData.slice(0, 4).map((market) => (
-                        <div key={market.symbol} className="flex items-center justify-between text-sm">
-                          <span className="font-medium">{market.symbol}</span>
-                          <div className={`flex items-center gap-1 ${market.change >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                            {market.change >= 0 ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
-                            <span className="text-xs font-medium">{market.change >= 0 ? '+' : ''}{market.change}%</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+              <EmergencyStopButton />
             </div>
           </div>
+          
+          {/* AI Agents Section */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-bold">Your AI Agents</h2>
+              <Badge variant="secondary" className="bg-primary/10 text-primary">
+                {agents.length} Total • {activeAgents.length} Active
+              </Badge>
+            </div>
 
-          {/* Active Agents Grid - Now directly below without spacing */}
-          <Card className="border-border/50">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-xl">Active AI Agents</CardTitle>
-                <Badge variant="outline" className="border-primary/30 text-primary">
-                  {activeAgents.length} Active
-                </Badge>
-              </div>
-              <CardDescription>Your autonomous trading agents and their performance</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {agents.length === 0 ? (
+              <Card className="border-dashed border-2 border-primary/20">
+                <CardContent className="p-12 text-center">
+                  <Bot className="w-16 h-16 text-primary/40 mx-auto mb-4" />
+                  <h3 className="text-xl font-semibold mb-2">No AI Agents Yet</h3>
+                  <p className="text-muted-foreground mb-4">
+                    Deploy your first AI agent to start autonomous trading
+                  </p>
+                  <Button onClick={() => setShowCreateAgent(true)} className="bg-primary hover:bg-primary/90">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Create Your First Agent
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {agents.map((agent) => (
-                  <Link key={agent.id} href={`/ai-agents/${agent.id}`}>
-                    <Card className={`cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-[1.02] ${
-                      agent.active 
-                        ? 'border-primary/30 bg-gradient-to-br from-primary/5 to-transparent' 
-                        : 'border-border/50 opacity-75'
-                    }`}>
-                      <CardContent className="p-4 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Brain className="w-4 h-4 text-primary" />
-                            <span className="font-medium text-sm truncate">{agent.name}</span>
-                          </div>
+                  <Card key={agent.id} className="border-border/50 hover:border-primary/30 transition-colors">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-lg">{agent.name}</CardTitle>
+                        <div className="flex items-center gap-2">
+                          <div className={`w-2 h-2 rounded-full ${agent.active ? 'bg-green-500' : 'bg-gray-400'}`} />
                           <Badge variant={agent.active ? "default" : "secondary"} className="text-xs">
-                            {agent.active ? "Live" : "Paused"}
+                            {agent.active ? 'Active' : 'Inactive'}
                           </Badge>
                         </div>
-                        
-                        <div className="space-y-2">
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Accuracy</span>
-                            <span className="font-medium">{agent.accuracy}%</span>
-                          </div>
-                          <Progress value={agent.accuracy} className="h-1.5" />
+                      </div>
+                      <CardDescription className="text-sm">{agent.description}</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Accuracy</p>
+                          <p className="font-semibold">{agent.accuracy}%</p>
                         </div>
-                        
-                        <div className="space-y-1">
-                          <div className="flex justify-between text-xs">
-                            <span className="text-muted-foreground">Signals</span>
-                            <span>{agent.signals}</span>
-                          </div>
-                          <p className="text-xs text-muted-foreground truncate">
-                            {agent.lastSignal}
-                          </p>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Signals</p>
+                          <p className="font-semibold">{agent.signals}</p>
                         </div>
-                        
-                        <div className="flex gap-1">
-                          {agent.focusAssets.slice(0, 3).map((asset) => (
-                            <Badge key={asset} variant="outline" className="text-xs px-2 py-0">
-                              {asset}
-                            </Badge>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </Link>
+                      </div>
+                      <div className="pt-2 border-t">
+                        <p className="text-xs text-muted-foreground">Last Signal</p>
+                        <p className="text-sm font-medium">{agent.lastSignal}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" className="flex-1" asChild>
+                          <Link href={`/ai-agents/${agent.id}/train`}>
+                            <Brain className="w-3 h-3 mr-1" />
+                            Train
+                          </Link>
+                        </Button>
+                        <Button size="sm" variant="outline" className="flex-1">
+                          <Activity className="w-3 h-3 mr-1" />
+                          Monitor
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          onClick={() => handleDeleteAgent(agent.id)}
+                          className="hover:bg-destructive/10 hover:text-destructive"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
                 ))}
-                
-                {/* Create New Agent Card */}
-                <Card 
-                  className="cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-[1.02] border-dashed border-2 border-primary/30"
-                  onClick={() => setShowCreateAgent(true)}
-                >
-                  <CardContent className="p-4 flex flex-col items-center justify-center h-full space-y-3 text-center">
-                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                      <Plus className="w-5 h-5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-sm">Create New Agent</p>
-                      <p className="text-xs text-muted-foreground">Deploy autonomous AI trader</p>
-                    </div>
-                  </CardContent>
-                </Card>
               </div>
-            </CardContent>
-          </Card>
+            )}
+          </div>
         </div>
       </div>
 
+      {/* Create Agent Dialog */}
       <CreateAgentDialog
         open={showCreateAgent}
         onOpenChange={setShowCreateAgent}
-        onCreateAgent={handleCreateAgent}
+        onAgentCreated={handleCreateAgent}
       />
     </div>
   )

@@ -164,6 +164,7 @@ class AgentSupabase {
       type: row.type,
       description: row.description,
       active: row.is_active,
+      isActive: row.is_active, // Also map to isActive for automation system
       accuracy: row.performance_metrics?.accuracy ?? 0,
       signals: row.performance_metrics?.signals ?? 0,
       lastSignal: row.performance_metrics?.lastSignal ?? '',
@@ -171,6 +172,12 @@ class AgentSupabase {
       riskTolerance: row.configuration?.riskTolerance ?? 50,
       focusAssets: row.configuration?.focusAssets ?? [],
       indicators: row.configuration?.indicators ?? [],
+      // Map additional required fields for trading automation
+      maxPositionSize: row.configuration?.maxPositionSize ?? 1000,
+      leverage: row.configuration?.leverage ?? 1,
+      tradingPairs: row.configuration?.tradingPairs ?? ['BTC-USD', 'ETH-USD'],
+      walletAddress: row.wallet_address,
+      tradingEnabled: row.configuration?.tradingEnabled ?? true,
     }
   }
 }

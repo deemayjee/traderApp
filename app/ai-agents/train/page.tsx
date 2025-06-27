@@ -23,214 +23,341 @@ import {
   Settings,
   Activity,
   CheckCircle,
-  AlertTriangle
+  AlertTriangle,
+  Play,
+  Pause as PauseIcon
 } from 'lucide-react'
 import Link from 'next/link'
 import { agentSupabase } from '@/lib/services/agent-supabase'
 import { useWalletAuth } from '@/components/auth/wallet-context'
 import type { AIAgent } from '@/components/ai-agents/create-agent-dialog'
+import { TrainingConfig } from "@/components/ai-agents/training-config"
+import { TrainingMonitor } from "@/components/ai-agents/training-monitor"
+import { hyperliquidService } from "@/lib/services/hyperliquid-service"
+import { toast } from "sonner"
 
 interface TrainingSession {
   id: string
   agentId: string
-  status: 'idle' | 'training' | 'completed' | 'failed'
-  progress: number
-  metrics: {
-    winRate: number
-    profitFactor: number
-    sharpeRatio: number
-    maxDrawdown: number
-    totalTrades: number
-    currentEpoch: number
-    totalEpochs: number
-  }
-  startTime?: string
+  agentName: string
+  status: 'running' | 'completed' | 'failed' | 'queued'
+  accuracy: number
+  epochs: number
+  currentEpoch: number
+  loss: number
+  backtestPnL: number
+  winRate: number
+  startTime: string
   endTime?: string
-  duration?: string
+  dataSize: number
+  strategy: string
+}
+
+interface TrainingMetrics {
+  totalSessions: number
+  activeSessions: number
+  averageAccuracy: number
+  successRate: number
+  totalAgents: number
+  trainedAgents: number
 }
 
 export default function TrainingPage() {
+  const { user } = useWalletAuth()
   const [agents, setAgents] = useState<AIAgent[]>([])
-  const [selectedAgent, setSelectedAgent] = useState<AIAgent | null>(null)
   const [trainingSessions, setTrainingSessions] = useState<TrainingSession[]>([])
+  const [selectedAgent, setSelectedAgent] = useState<AIAgent | null>(null)
+  const [isTraining, setIsTraining] = useState(false)
+  const [showTrainingConfig, setShowTrainingConfig] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('overview')
-  const { user, isAuthenticated } = useWalletAuth()
+  const [metrics, setMetrics] = useState<TrainingMetrics>({
+    totalSessions: 0,
+    activeSessions: 0,
+    averageAccuracy: 0,
+    successRate: 0,
+    totalAgents: 0,
+    trainedAgents: 0
+  })
 
   useEffect(() => {
-    const loadData = async () => {
-      if (!user?.address) return
-      
+    if (!user?.address) return
+    
+    const loadTrainingData = async () => {
       try {
+        setIsLoading(true)
+        
+        // Load user's agents
         const userAgents = await agentSupabase.getAllAgents(user.address)
         setAgents(userAgents)
         
-        // Mock training sessions data
-        const mockSessions: TrainingSession[] = userAgents.map(agent => ({
-          id: `session_${agent.id}`,
-          agentId: agent.id,
-          status: Math.random() > 0.7 ? 'training' : Math.random() > 0.5 ? 'completed' : 'idle',
-          progress: Math.floor(Math.random() * 100),
-          metrics: {
-            winRate: 55 + Math.random() * 25,
-            profitFactor: 1.2 + Math.random() * 0.8,
-            sharpeRatio: 0.8 + Math.random() * 1.2,
-            maxDrawdown: 5 + Math.random() * 15,
-            totalTrades: Math.floor(Math.random() * 500) + 100,
-            currentEpoch: Math.floor(Math.random() * 80) + 20,
-            totalEpochs: 100
-          },
-          startTime: new Date(Date.now() - Math.random() * 24 * 60 * 60 * 1000).toISOString(),
-          duration: `${Math.floor(Math.random() * 120) + 30} min`
-        }))
+        // Generate training sessions from agents
+        const sessions = await generateTrainingSessions(userAgents)
+        setTrainingSessions(sessions)
         
-        setTrainingSessions(mockSessions)
-        if (userAgents.length > 0) {
-          setSelectedAgent(userAgents[0])
-        }
+        // Calculate metrics
+        const calculatedMetrics = calculateTrainingMetrics(sessions, userAgents)
+        setMetrics(calculatedMetrics)
+        
       } catch (error) {
-        console.error('Error loading data:', error)
+        console.error('Error loading training data:', error)
+        toast.error('Failed to load training data')
       } finally {
         setIsLoading(false)
       }
     }
-
-    loadData()
+    
+    loadTrainingData()
   }, [user?.address])
 
-  const getStatusIcon = (status: TrainingSession['status']) => {
-    switch (status) {
-      case 'training':
-        return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-      case 'completed':
-        return <CheckCircle className="h-4 w-4 text-green-500" />
-      case 'failed':
-        return <AlertTriangle className="h-4 w-4 text-red-500" />
-      default:
-        return <Clock className="h-4 w-4 text-gray-500" />
+  const generateTrainingSessions = async (agents: AIAgent[]): Promise<TrainingSession[]> => {
+    // For now, generate mock sessions based on agents
+    // In a real implementation, this would query a training database
+    return agents.map((agent, index) => ({
+      id: `session-${agent.id}-${index}`,
+      agentId: agent.id,
+      agentName: agent.name,
+      status: agent.active ? 'completed' : 'queued' as 'running' | 'completed' | 'failed' | 'queued',
+      accuracy: agent.accuracy || Math.random() * 30 + 70,
+      epochs: 100,
+      currentEpoch: agent.active ? 100 : Math.floor(Math.random() * 50),
+      loss: Math.random() * 0.1 + 0.01,
+      backtestPnL: (Math.random() - 0.5) * 1000,
+      winRate: agent.accuracy || Math.random() * 30 + 60,
+      startTime: new Date(Date.now() - Math.random() * 86400000).toISOString(),
+      endTime: agent.active ? new Date().toISOString() : undefined,
+      dataSize: Math.floor(Math.random() * 10000) + 5000,
+      strategy: agent.type || 'Technical Analysis'
+    }))
+  }
+
+  const calculateTrainingMetrics = (sessions: TrainingSession[], agents: AIAgent[]): TrainingMetrics => {
+    const activeSessions = sessions.filter(s => s.status === 'running').length
+    const completedSessions = sessions.filter(s => s.status === 'completed')
+    const avgAccuracy = completedSessions.length > 0
+      ? completedSessions.reduce((sum, s) => sum + s.accuracy, 0) / completedSessions.length
+      : 0
+    const successRate = sessions.length > 0
+      ? (completedSessions.length / sessions.length) * 100
+      : 0
+    const trainedAgents = agents.filter(a => a.active).length
+
+    return {
+      totalSessions: sessions.length,
+      activeSessions,
+      averageAccuracy: avgAccuracy,
+      successRate,
+      totalAgents: agents.length,
+      trainedAgents
     }
   }
 
-  const getStatusBadge = (status: TrainingSession['status']) => {
-    const variants = {
-      idle: 'secondary',
-      training: 'default',
-      completed: 'default',
-      failed: 'destructive'
-    } as const
-
-    const colors = {
-      idle: 'bg-gray-100 text-gray-700',
-      training: 'bg-blue-100 text-blue-700',
-      completed: 'bg-green-100 text-green-700',
-      failed: 'bg-red-100 text-red-700'
+  const handleStartTraining = async (agent: AIAgent, config?: any) => {
+    if (!user?.address) {
+      toast.error("Please connect your wallet first")
+      return
     }
+    
+    try {
+      setIsTraining(true)
+      
+      // Start training session
+      const trainingResult = await hyperliquidService.trainAgent(agent, [])
+      
+      // Create new training session
+      const newSession: TrainingSession = {
+        id: `session-${agent.id}-${Date.now()}`,
+        agentId: agent.id,
+        agentName: agent.name,
+        status: 'running',
+        accuracy: 0,
+        epochs: config?.epochs || 100,
+        currentEpoch: 0,
+        loss: 1.0,
+        backtestPnL: 0,
+        winRate: 0,
+        startTime: new Date().toISOString(),
+        dataSize: config?.dataSize || 10000,
+        strategy: agent.type || 'Technical Analysis'
+      }
+      
+      setTrainingSessions(prev => [newSession, ...prev])
+      toast.success(`Training started for ${agent.name}`)
+      
+      // Simulate training progress
+      simulateTraining(newSession)
+      
+    } catch (error) {
+      console.error('Error starting training:', error)
+      toast.error('Failed to start training')
+    } finally {
+      setIsTraining(false)
+      setShowTrainingConfig(false)
+    }
+  }
 
-    return (
-      <Badge variant={variants[status]} className={colors[status]}>
-        {status.charAt(0).toUpperCase() + status.slice(1)}
-      </Badge>
-    )
+  const simulateTraining = (session: TrainingSession) => {
+    const interval = setInterval(() => {
+      setTrainingSessions(prev => prev.map(s => {
+        if (s.id === session.id && s.status === 'running') {
+          const newEpoch = Math.min(s.currentEpoch + 1, s.epochs)
+          const progress = newEpoch / s.epochs
+          
+          const updatedSession = {
+            ...s,
+            currentEpoch: newEpoch,
+            accuracy: 50 + progress * 30 + Math.random() * 10,
+            loss: 1.0 - progress * 0.9 + Math.random() * 0.1,
+            winRate: 40 + progress * 30 + Math.random() * 15,
+            backtestPnL: (progress - 0.5) * 2000 + Math.random() * 500
+          }
+          
+          if (newEpoch >= s.epochs) {
+            updatedSession.status = 'completed'
+            updatedSession.endTime = new Date().toISOString()
+            clearInterval(interval)
+            toast.success(`Training completed for ${s.agentName}`)
+          }
+          
+          return updatedSession
+        }
+        return s
+      }))
+    }, 2000) // Update every 2 seconds for demo
+  }
+
+  const handleStopTraining = (sessionId: string) => {
+    setTrainingSessions(prev => prev.map(session => 
+      session.id === sessionId 
+        ? { ...session, status: 'failed', endTime: new Date().toISOString() }
+        : session
+    ))
+    toast.info("Training stopped")
+  }
+
+  const getStatusIcon = (status: TrainingSession['status']) => {
+    switch (status) {
+      case 'running': return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+      case 'completed': return <CheckCircle className="h-4 w-4 text-green-500" />
+      case 'failed': return <AlertTriangle className="h-4 w-4 text-red-500" />
+      case 'queued': return <Clock className="h-4 w-4 text-amber-500" />
+    }
+  }
+
+  const getStatusColor = (status: TrainingSession['status']) => {
+    switch (status) {
+      case 'running': return 'bg-blue-100 text-blue-800'
+      case 'completed': return 'bg-green-100 text-green-800'
+      case 'failed': return 'bg-red-100 text-red-800'
+      case 'queued': return 'bg-amber-100 text-amber-800'
+    }
   }
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin" />
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading training data...</p>
+        </div>
       </div>
     )
   }
 
-  if (!isAuthenticated) {
+  if (!user) {
     return (
-      <div className="container mx-auto py-8">
-        <Card className="max-w-md mx-auto">
-          <CardHeader className="text-center">
-            <Brain className="h-12 w-12 mx-auto mb-4 text-primary" />
-            <CardTitle>Authentication Required</CardTitle>
-          </CardHeader>
-          <CardContent className="text-center">
-            <p className="text-muted-foreground mb-6">
-              Connect your wallet to access AI agent training features.
+      <div className="min-h-screen flex items-center justify-center">
+        <Card className="w-full max-w-md text-center p-6">
+          <CardContent>
+            <Brain className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+            <h2 className="text-xl font-semibold mb-2">Connect Your Wallet</h2>
+            <p className="text-muted-foreground mb-4">
+              Please connect your wallet to access agent training
             </p>
-            <Button asChild className="w-full">
-              <Link href="/auth/login">
-                <Brain className="mr-2 h-4 w-4" />
-                Connect Wallet
-              </Link>
+            <Button asChild>
+              <Link href="/auth/login">Connect Wallet</Link>
             </Button>
           </CardContent>
         </Card>
       </div>
     )
   }
-
-  if (agents.length === 0) {
-    return (
-      <div className="container mx-auto py-8">
-        <Card className="max-w-md mx-auto">
-          <CardHeader className="text-center">
-            <Target className="h-12 w-12 mx-auto mb-4 text-primary" />
-            <CardTitle>No Agents Found</CardTitle>
-          </CardHeader>
-          <CardContent className="text-center">
-            <p className="text-muted-foreground mb-6">
-              Create your first AI trading agent to start training and optimization.
-            </p>
-            <Button asChild className="w-full">
-              <Link href="/ai-agents">
-                <Brain className="mr-2 h-4 w-4" />
-                Create Your First Agent
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
-  const selectedSession = trainingSessions.find(s => s.agentId === selectedAgent?.id)
 
   return (
-    <div className="container mx-auto py-6 space-y-6">
+    <div className="container mx-auto p-6 space-y-8">
       {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold">AI Agent Training</h1>
-          <p className="text-muted-foreground">
-            Train and optimize your AI trading agents for better performance
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+        <div className="space-y-2">
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+            AI Agent Training
+          </h1>
+          <p className="text-lg text-muted-foreground">
+            Train and optimize your AI trading agents for maximum performance
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <Select
-            value={selectedAgent?.id || ''}
-            onValueChange={(value) => {
-              const agent = agents.find(a => a.id === value)
-              setSelectedAgent(agent || null)
-            }}
+        <div className="flex items-center gap-4">
+          <Button 
+            onClick={() => setShowTrainingConfig(true)}
+            className="bg-primary hover:bg-primary/90"
           >
-            <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="Select an agent" />
-            </SelectTrigger>
-            <SelectContent>
-              {agents.map((agent) => (
-                <SelectItem key={agent.id} value={agent.id}>
-                  {agent.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button asChild variant="outline">
-            <Link href="/ai-agents">
-              <Brain className="mr-2 h-4 w-4" />
-              Manage Agents
-            </Link>
+            <Brain className="w-4 h-4 mr-2" />
+            Train New Agent
           </Button>
         </div>
       </div>
 
+      {/* Training Metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Total Sessions</p>
+                <p className="text-2xl font-bold">{metrics.totalSessions}</p>
+              </div>
+              <Brain className="h-8 w-8 text-primary" />
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Active Training</p>
+                <p className="text-2xl font-bold text-blue-600">{metrics.activeSessions}</p>
+              </div>
+              <Activity className="h-8 w-8 text-blue-600" />
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Avg Accuracy</p>
+                <p className="text-2xl font-bold text-green-600">{metrics.averageAccuracy.toFixed(1)}%</p>
+              </div>
+              <Target className="h-8 w-8 text-green-600" />
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Success Rate</p>
+                <p className="text-2xl font-bold text-purple-600">{metrics.successRate.toFixed(1)}%</p>
+              </div>
+              <TrendingUp className="h-8 w-8 text-purple-600" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       {selectedAgent && (
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <Tabs value="overview" className="space-y-6">
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="training">Training</TabsTrigger>
@@ -335,7 +462,7 @@ export default function TrainingPage() {
             </div>
 
             {/* Training Status */}
-            {selectedSession && (
+            {selectedAgent && (
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -346,26 +473,28 @@ export default function TrainingPage() {
                 <CardContent>
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-3">
-                      {getStatusIcon(selectedSession.status)}
+                      {getStatusIcon(selectedAgent.status)}
                       <div>
-                        <p className="font-medium">Training Session #{selectedSession.id.slice(-6)}</p>
+                        <p className="font-medium">Training Session #{selectedAgent.id.slice(-6)}</p>
                         <p className="text-sm text-muted-foreground">
-                          Started {new Date(selectedSession.startTime || '').toLocaleDateString()}
+                          Started {new Date(selectedAgent.startTime || '').toLocaleDateString()}
                         </p>
                       </div>
                     </div>
-                    {getStatusBadge(selectedSession.status)}
+                    <Badge className={getStatusColor(selectedAgent.status)}>
+                      {selectedAgent.status.charAt(0).toUpperCase() + selectedAgent.status.slice(1)}
+                    </Badge>
                   </div>
                   
-                  {selectedSession.status === 'training' && (
+                  {selectedAgent.status === 'running' && (
                     <div className="space-y-2">
                       <div className="flex justify-between text-sm">
                         <span>Progress</span>
-                        <span>{selectedSession.progress}%</span>
+                        <span>{selectedAgent.currentEpoch}/{selectedAgent.epochs}</span>
                       </div>
-                      <Progress value={selectedSession.progress} />
+                      <Progress value={selectedAgent.currentEpoch / selectedAgent.epochs} />
                       <p className="text-sm text-muted-foreground">
-                        Epoch {selectedSession.metrics.currentEpoch} of {selectedSession.metrics.totalEpochs}
+                        Epoch {selectedAgent.currentEpoch} of {selectedAgent.epochs}
                       </p>
                     </div>
                   )}
@@ -373,24 +502,24 @@ export default function TrainingPage() {
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
                     <div>
                       <p className="text-sm font-medium text-muted-foreground">Win Rate</p>
-                      <p className="text-lg font-semibold">{selectedSession.metrics.winRate.toFixed(1)}%</p>
+                      <p className="text-lg font-semibold">{selectedAgent.winRate.toFixed(1)}%</p>
                     </div>
                     <div>
                       <p className="text-sm font-medium text-muted-foreground">Profit Factor</p>
-                      <p className="text-lg font-semibold">{selectedSession.metrics.profitFactor.toFixed(2)}</p>
+                      <p className="text-lg font-semibold">{selectedAgent.profitFactor.toFixed(2)}</p>
                     </div>
                     <div>
                       <p className="text-sm font-medium text-muted-foreground">Sharpe Ratio</p>
-                      <p className="text-lg font-semibold">{selectedSession.metrics.sharpeRatio.toFixed(2)}</p>
+                      <p className="text-lg font-semibold">{selectedAgent.sharpeRatio.toFixed(2)}</p>
                     </div>
                     <div>
                       <p className="text-sm font-medium text-muted-foreground">Max Drawdown</p>
-                      <p className="text-lg font-semibold">{selectedSession.metrics.maxDrawdown.toFixed(1)}%</p>
+                      <p className="text-lg font-semibold">{selectedAgent.maxDrawdown.toFixed(1)}%</p>
                     </div>
                   </div>
 
                   <div className="flex gap-2 mt-6">
-                    {selectedSession.status === 'idle' && (
+                    {selectedAgent.status === 'queued' && (
                       <Button asChild>
                         <Link href={`/ai-agents/${selectedAgent.id}/train`}>
                           <PlayCircle className="mr-2 h-4 w-4" />
@@ -398,7 +527,7 @@ export default function TrainingPage() {
                         </Link>
                       </Button>
                     )}
-                    {selectedSession.status === 'training' && (
+                    {selectedAgent.status === 'running' && (
                       <Button variant="outline">
                         <PauseCircle className="mr-2 h-4 w-4" />
                         Pause Training

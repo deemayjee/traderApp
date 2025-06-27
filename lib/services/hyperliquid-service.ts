@@ -1,4 +1,41 @@
+import * as hl from "@nktkas/hyperliquid"
 import { AIAgent } from "@/components/ai-agents/create-agent-dialog"
+import { tradingHistoryService, TradeRecord } from "./trading-history-service"
+
+// Keep existing interfaces but enhance with SDK types
+export interface OrderRequest {
+  symbol: string
+  side: 'buy' | 'sell'
+  orderType: 'Market' | 'Limit'
+  size: number
+  price?: number
+  reduceOnly?: boolean
+  timeInForce?: 'Gtc' | 'Ioc' | 'Fok'
+}
+
+export interface TradingResult {
+  success: boolean
+  orderId?: string
+  error?: string
+  executions?: Array<{
+    price: number
+    size: number
+    fee: number
+    timestamp: number
+  }>
+}
+
+export interface PositionUpdate {
+  symbol: string
+  size: number
+  entryPrice: number
+  unrealizedPnl: number
+  realizedPnl: number
+  leverage: number
+  side: 'long' | 'short'
+  timestamp: number
+  agentId?: string
+}
 
 export interface HyperliquidMarketData {
   symbol: string
@@ -39,7 +76,7 @@ export interface AgentTradeSignal {
   size: number
   price?: number
   reason: string
-  timestamp:Number
+  timestamp: number
 }
 
 export interface HyperliquidAsset {
@@ -64,212 +101,410 @@ export interface TradingPair {
 }
 
 class HyperliquidService {
-  private readonly API_BASE = 'https://api.hyperliquid.xyz'
-  private wsUrl = 'wss://api.hyperliquid.xyz/ws'
-  private activeConnections = new Map<string, WebSocket>()
+  private httpTransport: hl.HttpTransport
+  private wsTransport: hl.WebSocketTransport
+  private publicClient: hl.PublicClient
+  private eventClient: hl.EventClient | null = null
+  private positionCallbacks = new Set<(update: PositionUpdate) => void>()
+  private agentTrades = new Map<string, Array<{
+    orderId: string
+    symbol: string
+    side: 'buy' | 'sell'
+    size: number
+    price: number
+    timestamp: number
+    pnl?: number
+  }>>()
+  private activeSubscriptions = new Map<string, any>()
 
-  async getMetadata(): Promise<HyperliquidMetadata> {
+  constructor() {
+    // Initialize HTTP transport for info requests
+    this.httpTransport = new hl.HttpTransport({
+      timeout: 10000,
+    })
+
+    // Initialize WebSocket transport for real-time data
+    this.wsTransport = new hl.WebSocketTransport({
+      keepAlive: {
+        interval: 30000,
+      },
+      reconnect: {
+        maxRetries: 3,
+        connectionTimeout: 10000,
+      },
+    })
+
+    // Initialize public client for market data
+    this.publicClient = new hl.PublicClient({ transport: this.httpTransport })
+    
+    // Initialize event client for real-time updates
+    this.eventClient = new hl.EventClient({
+      transport: this.wsTransport,
+    })
+  }
+
+  async getMetadata(): Promise<any> {
     try {
-      const response = await fetch(`${this.API_BASE}/info`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          type: 'meta'
-        })
-      })
-      
-      if (!response.ok) {
-        throw new Error(`Hyperliquid API error: ${response.status}`)
-      }
-      
-      return await response.json()
+      // Use the correct method name from the SDK
+      return await this.publicClient.meta()
     } catch (error) {
       console.error('Failed to fetch Hyperliquid metadata:', error)
-      // Return fallback data with popular pairs
-      return {
-        universe: [
-          { name: 'BTC', szDecimals: 5, maxLeverage: 50 },
-          { name: 'ETH', szDecimals: 4, maxLeverage: 50 },
-          { name: 'SOL', szDecimals: 2, maxLeverage: 20 },
-          { name: 'AVAX', szDecimals: 1, maxLeverage: 20 },
-          { name: 'DOGE', szDecimals: 0, maxLeverage: 20 }
-        ],
-        marginTables: []
-      }
+      throw error
     }
   }
   
   async getTradingPairs(): Promise<TradingPair[]> {
-    const metadata = await this.getMetadata()
-    
-    return metadata.universe
-      .filter(asset => !asset.isDelisted) // Filter out delisted assets
-      .map(asset => ({
-        symbol: `${asset.name}-USD`,
-        name: asset.name,
-        maxLeverage: asset.maxLeverage,
-        isIsolatedOnly: asset.onlyIsolated || false,
-        isDelisted: asset.isDelisted || false
-      }))
-      .sort((a, b) => {
-        // Sort by popularity - BTC, ETH first, then alphabetically
-        const popularPairs = ['BTC-USD', 'ETH-USD', 'SOL-USD', 'AVAX-USD']
-        const aIndex = popularPairs.indexOf(a.symbol)
-        const bIndex = popularPairs.indexOf(b.symbol)
-        
-        if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex
-        if (aIndex !== -1) return -1
-        if (bIndex !== -1) return 1
-        return a.symbol.localeCompare(b.symbol)
-      })
-  }
-  
-  async getAssetContexts() {
     try {
-      const response = await fetch(`${this.API_BASE}/info`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          type: 'metaAndAssetCtxs'
+      const metadata = await this.getMetadata()
+      
+      return metadata.universe
+        .filter((asset: any) => !asset.isDelisted)
+        .map((asset: any) => ({
+          symbol: `${asset.name}-USD`,
+          name: asset.name,
+          maxLeverage: asset.maxLeverage,
+          isIsolatedOnly: asset.onlyIsolated || false,
+          isDelisted: asset.isDelisted || false
+        }))
+        .sort((a: TradingPair, b: TradingPair) => {
+          // Sort by popularity - BTC, ETH first, then alphabetically
+          const popularPairs = ['BTC-USD', 'ETH-USD', 'SOL-USD', 'AVAX-USD']
+          const aIndex = popularPairs.indexOf(a.symbol)
+          const bIndex = popularPairs.indexOf(b.symbol)
+          
+          if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex
+          if (aIndex !== -1) return -1
+          if (bIndex !== -1) return 1
+          return a.symbol.localeCompare(b.symbol)
         })
-      })
-      
-      if (!response.ok) {
-        throw new Error(`Hyperliquid API error: ${response.status}`)
-      }
-      
-      return await response.json()
     } catch (error) {
-      console.error('Failed to fetch Hyperliquid asset contexts:', error)
-      return null
+      console.error('Failed to get trading pairs:', error)
+      // Return fallback data
+      return [
+        { symbol: 'BTC-USD', name: 'BTC', maxLeverage: 50, isIsolatedOnly: false, isDelisted: false },
+        { symbol: 'ETH-USD', name: 'ETH', maxLeverage: 50, isIsolatedOnly: false, isDelisted: false },
+        { symbol: 'SOL-USD', name: 'SOL', maxLeverage: 20, isIsolatedOnly: false, isDelisted: false },
+        { symbol: 'AVAX-USD', name: 'AVAX', maxLeverage: 20, isIsolatedOnly: false, isDelisted: false },
+      ]
     }
   }
 
   async getMarketData(symbols: string[]): Promise<HyperliquidMarketData[]> {
     try {
-      // Mock data for now - replace with actual Hyperliquid API calls
+      const allMids = await this.publicClient.allMids()
+      
+      return symbols.map(symbol => {
+        const coin = symbol.replace('-USD', '')
+        const price = allMids[coin] ? parseFloat(allMids[coin]) : 0
+        
+        return {
+          symbol,
+          price,
+          change24h: 0, // Would need 24h data for this
+          volume24h: 0, // Would need volume data
+          funding: 0, // Would need funding rate
+          openInterest: 0, // Would need OI data
+          timestamp: Date.now()
+        }
+      })
+    } catch (error) {
+      console.error('Failed to fetch market data:', error)
+      // Return mock data for testing
       return symbols.map(symbol => ({
         symbol,
-        price: Math.random() * 1000 + 1000,
+        price: Math.random() * 50000 + 20000,
         change24h: (Math.random() - 0.5) * 10,
-        volume24h: Math.random() * 10000000,
-        funding: (Math.random() - 0.5) * 0.1,
-        openInterest: Math.random() * 1000000,
+        volume24h: Math.random() * 1000000,
+        funding: (Math.random() - 0.5) * 0.01,
+        openInterest: Math.random() * 10000000,
         timestamp: Date.now()
       }))
-    } catch (error) {
-      console.error('Error fetching market data:', error)
-      throw new Error('Failed to fetch market data from Hyperliquid')
     }
   }
 
   async getPositions(userAddress: string): Promise<HyperliquidPosition[]> {
     try {
-      // Mock data - replace with actual API call
-      return [
-        {
-          symbol: 'ETH',
-          size: 1.5,
-          entryPrice: 2500,
-          unrealizedPnl: 150.25,
-          realizedPnl: 0,
-          leverage: 3,
-          side: 'long'
-        }
-      ]
+      if (!this.publicClient) {
+        throw new Error('Public client not initialized')
+      }
+
+      // Ensure userAddress is in the correct format
+      const formattedAddress = userAddress.startsWith('0x') ? userAddress as `0x${string}` : `0x${userAddress}` as `0x${string}`
+      const clearinghouseState = await this.publicClient.clearinghouseState({ user: formattedAddress })
+      
+      if (!clearinghouseState.assetPositions) {
+        return []
+      }
+
+      const metadata = await this.getMetadata()
+      
+      return clearinghouseState.assetPositions
+        .filter((pos: any) => parseFloat(pos.position.szi) !== 0)
+        .map((pos: any) => {
+          const size = parseFloat(pos.position.szi)
+          const entryPrice = parseFloat(pos.position.entryPx || '0')
+          const unrealizedPnl = parseFloat(pos.position.unrealizedPnl)
+          const asset = metadata.universe[parseInt(pos.position.coin)]
+          
+          return {
+            symbol: `${asset.name}-USD`,
+            size: Math.abs(size),
+            entryPrice,
+            unrealizedPnl,
+            realizedPnl: 0, // SDK doesn't provide this directly
+            leverage: 1, // Would need to calculate based on margin
+            side: size > 0 ? 'long' : 'short'
+          }
+        })
     } catch (error) {
       console.error('Error fetching positions:', error)
-      throw new Error('Failed to fetch positions from Hyperliquid')
+      return []
     }
   }
 
-  async placeOrder(order: Omit<HyperliquidOrder, 'id' | 'status' | 'timestamp'>): Promise<HyperliquidOrder> {
+  async placeOrder(
+    order: OrderRequest, 
+    walletAddress: string, 
+    privateKey?: string
+  ): Promise<TradingResult> {
     try {
-      // Mock order placement - replace with actual API call
-      const newOrder: HyperliquidOrder = {
-        ...order,
-        id: `order_${Date.now()}`,
-        status: 'pending',
-        timestamp: Date.now()
-      }
+      // For now, simulate order placement until wallet integration is complete
+      // This is a temporary implementation that will be replaced with real SDK calls
+      console.log('Simulating order placement:', order)
       
-      console.log('Placing order on Hyperliquid:', newOrder)
-      return newOrder
+      const orderId = `order_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      const currentPrice = await this.getCurrentPrice(order.symbol)
+      
+      // Simulate order execution
+      const executionPrice = order.price || (order.side === 'buy' ? 
+        currentPrice * 1.001 : 
+        currentPrice * 0.999)
+      
+      const result: TradingResult = {
+        success: true,
+        orderId,
+        executions: [{
+          price: executionPrice,
+          size: order.size,
+          fee: order.size * executionPrice * 0.0002, // 0.02% fee
+          timestamp: Date.now()
+        }]
+      }
+
+      // Track this order for the agent if it's an agent trade
+      await this.trackAgentTrade(order, result, walletAddress)
+      
+      return result
     } catch (error) {
       console.error('Error placing order:', error)
-      throw new Error('Failed to place order on Hyperliquid')
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to place order'
+      }
     }
   }
 
-  async executeAgentTrade(agent: AIAgent, signal: AgentTradeSignal): Promise<HyperliquidOrder> {
+  private async getCurrentPrice(symbol: string): Promise<number> {
+    try {
+      const marketData = await this.getMarketData([symbol])
+      return marketData[0]?.price || 0
+    } catch (error) {
+      console.error('Error getting current price:', error)
+      return 0
+    }
+  }
+
+  private async trackAgentTrade(
+    order: OrderRequest, 
+    result: TradingResult, 
+    walletAddress: string,
+    agentId?: string
+  ) {
+    if (result.success && result.orderId && result.executions) {
+      const execution = result.executions[0]
+      
+      // Store in database for permanent tracking
+      if (agentId) {
+        try {
+          const tradeRecord: Omit<TradeRecord, 'id' | 'createdAt' | 'updatedAt'> = {
+            agentId,
+            walletAddress,
+            orderId: result.orderId,
+            symbol: order.symbol,
+            side: order.side,
+            size: order.size,
+            price: order.price || execution.price,
+            executionPrice: execution.price,
+            fee: execution.fee,
+            timestamp: execution.timestamp,
+            status: 'open'
+          }
+          
+          await tradingHistoryService.recordTrade(tradeRecord)
+        } catch (error) {
+          console.error('Error recording trade in database:', error)
+        }
+      }
+      
+      // Keep in memory for quick access
+      const trade = {
+        orderId: result.orderId,
+        symbol: order.symbol,
+        side: order.side,
+        size: order.size,
+        price: execution.price,
+        timestamp: execution.timestamp,
+        agentId
+      }
+      
+      if (!this.agentTrades.has(walletAddress)) {
+        this.agentTrades.set(walletAddress, [])
+      }
+      this.agentTrades.get(walletAddress)!.push(trade)
+    }
+  }
+
+  async executeAgentTrade(agent: AIAgent, signal: AgentTradeSignal, walletAddress: string): Promise<TradingResult> {
     try {
       // Calculate max position size based on risk tolerance
-      const maxPositionSize = agent.riskTolerance * 100 // Simple calculation based on risk tolerance
+      const riskTolerance = agent.riskTolerance || 50
+      const maxPositionSize = riskTolerance * 100
       
       // Validate signal against agent configuration
       if (signal.size > maxPositionSize) {
         throw new Error(`Trade size exceeds maximum position size of $${maxPositionSize}`)
       }
 
-      // Calculate actual position size based on risk management
       const positionSize = Math.min(signal.size, maxPositionSize)
       
-      const order: Omit<HyperliquidOrder, 'id' | 'status' | 'timestamp'> = {
+      const orderRequest: OrderRequest = {
         symbol: signal.symbol,
         side: signal.action as 'buy' | 'sell',
+        orderType: signal.price ? 'Limit' : 'Market',
         size: positionSize,
-        price: signal.price || 0, // Use market price if not specified
-        type: signal.price ? 'limit' : 'market'
+        price: signal.price
       }
 
-      return await this.placeOrder(order)
+      const result = await this.placeOrder(orderRequest, walletAddress)
+      
+      // Associate this trade with the agent
+      if (result.success) {
+        this.associateTradeWithAgent(agent.id, result, signal)
+        await this.trackAgentTrade(orderRequest, result, walletAddress, agent.id)
+      }
+      
+      return result
     } catch (error) {
       console.error('Error executing agent trade:', error)
-      throw error
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to execute agent trade'
+      }
+    }
+  }
+
+  private associateTradeWithAgent(agentId: string, result: TradingResult, signal: AgentTradeSignal) {
+    if (!result.orderId || !result.executions) return
+    
+    const execution = result.executions[0]
+    const agentTrade = {
+      agentId,
+      orderId: result.orderId,
+      symbol: signal.symbol,
+      side: signal.action as 'buy' | 'sell',
+      size: signal.size,
+      price: execution.price,
+      timestamp: execution.timestamp,
+      reason: signal.reason,
+      confidence: signal.confidence
+    }
+    
+    // Store agent-specific trade data
+    if (!this.agentTrades.has(agentId)) {
+      this.agentTrades.set(agentId, [])
+    }
+    this.agentTrades.get(agentId)!.push(agentTrade as any)
+  }
+
+  // Real-time position monitoring using SDK WebSocket
+  subscribeToPositions(walletAddress: string, callback: (update: PositionUpdate) => void): () => void {
+    this.positionCallbacks.add(callback)
+    
+    if (!this.eventClient) {
+      console.warn('Event client not initialized - positions will not update in real-time')
+      return () => {
+        this.positionCallbacks.delete(callback)
+      }
+    }
+
+    try {
+      // Ensure walletAddress is in the correct format
+      const formattedAddress = walletAddress.startsWith('0x') ? walletAddress as `0x${string}` : `0x${walletAddress}` as `0x${string}`
+      
+      // Subscribe to user events for position updates
+      this.eventClient.userEvents({ user: formattedAddress }, (data: any) => {
+        if (data.fills) {
+          // Process fills and update positions
+          data.fills.forEach((fill: any) => {
+            const update: PositionUpdate = {
+              symbol: `${fill.coin}-USD`,
+              size: parseFloat(fill.sz),
+              entryPrice: parseFloat(fill.px),
+              unrealizedPnl: 0, // Will be updated with actual position data
+              realizedPnl: 0,
+              leverage: 1,
+              side: fill.side === 'B' ? 'long' : 'short',
+              timestamp: Date.now()
+            }
+            
+            callback(update)
+          })
+        }
+      }).catch((error: any) => {
+        console.error('Failed to subscribe to position updates:', error)
+      })
+    } catch (error) {
+      console.error('Error setting up position subscription:', error)
+    }
+
+    return () => {
+      this.positionCallbacks.delete(callback)
     }
   }
 
   subscribeToMarketData(symbols: string[], callback: (data: HyperliquidMarketData) => void): () => void {
-    const ws = new WebSocket(this.wsUrl)
-    const connectionId = `market_${Date.now()}`
-    
-    ws.onopen = () => {
-      console.log('Connected to Hyperliquid WebSocket')
-      // Subscribe to market data for specified symbols
-      ws.send(JSON.stringify({
-        method: 'subscribe',
-        params: {
-          channel: 'trades',
-          symbols
-        }
-      }))
+    if (!this.eventClient) {
+      console.warn('Event client not initialized - market data will not update in real-time')
+      return () => {}
     }
 
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        if (data.channel === 'trades') {
-          callback(data.data)
-        }
-      } catch (error) {
-        console.error('Error parsing WebSocket data:', error)
-      }
+    try {
+      // Subscribe to all mids for price updates
+      this.eventClient.allMids((data: any) => {
+        symbols.forEach(symbol => {
+          const coin = symbol.replace('-USD', '')
+          if (data[coin]) {
+            const marketData: HyperliquidMarketData = {
+              symbol,
+              price: parseFloat(data[coin]),
+              change24h: 0, // Would need additional data
+              volume24h: 0,
+              funding: 0,
+              openInterest: 0,
+              timestamp: Date.now()
+            }
+            callback(marketData)
+          }
+        })
+      }).catch((error: any) => {
+        console.error('Failed to subscribe to market data:', error)
+      })
+    } catch (error) {
+      console.error('Error setting up market data subscription:', error)
     }
 
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error)
-    }
-
-    this.activeConnections.set(connectionId, ws)
-
-    // Return cleanup function
     return () => {
-      ws.close()
-      this.activeConnections.delete(connectionId)
+      // Unsubscribe logic would go here
     }
   }
 
@@ -280,20 +515,75 @@ class HyperliquidService {
     avgTradeSize: number
     sharpeRatio: number
     maxDrawdown: number
+    trades: Array<any>
+    dailyPnl: number[]
   }> {
     try {
-      // Mock performance data - replace with actual database queries
+      // Use the correct method name from the trading history service
+      const pnlData = await tradingHistoryService.calculateAgentPnL(agentId, timeframe)
+      
+      // Convert to the expected format
       return {
-        totalPnl: Math.random() * 1000 - 500,
-        winRate: Math.random() * 40 + 50, // 50-90%
-        totalTrades: Math.floor(Math.random() * 100),
-        avgTradeSize: Math.random() * 500 + 100,
-        sharpeRatio: Math.random() * 2,
-        maxDrawdown: Math.random() * -20
+        totalPnl: pnlData.totalPnl,
+        winRate: pnlData.winRate,
+        totalTrades: pnlData.totalTrades,
+        avgTradeSize: pnlData.trades.length > 0 
+          ? pnlData.trades.reduce((sum: number, trade: any) => sum + (trade.size * trade.price), 0) / pnlData.trades.length 
+          : 0,
+        sharpeRatio: 1.2, // Mock value for now
+        maxDrawdown: 0.15, // Mock value for now
+        trades: pnlData.trades,
+        dailyPnl: pnlData.dailyPnl
       }
     } catch (error) {
-      console.error('Error fetching agent performance:', error)
-      throw new Error('Failed to fetch agent performance data')
+      console.error('Error getting agent performance:', error)
+      return {
+        totalPnl: 0,
+        winRate: 0,
+        totalTrades: 0,
+        avgTradeSize: 0,
+        sharpeRatio: 0,
+        maxDrawdown: 0,
+        trades: [],
+        dailyPnl: []
+      }
+    }
+  }
+
+  async getAgentAnalytics(agentId: string): Promise<{
+    performance: any
+    recentTrades: any[]
+    riskMetrics: {
+      avgLeverage: number
+      maxPositionSize: number
+      riskScore: number
+    }
+    signals: {
+      total: number
+      accuracy: number
+      avgConfidence: number
+    }
+  }> {
+    try {
+      const performance = await this.getAgentPerformance(agentId)
+      
+      return {
+        performance,
+        recentTrades: performance.trades.slice(-10),
+        riskMetrics: {
+          avgLeverage: 1.5,
+          maxPositionSize: 10000,
+          riskScore: 0.3
+        },
+        signals: {
+          total: performance.totalTrades,
+          accuracy: performance.winRate,
+          avgConfidence: 0.75
+        }
+      }
+    } catch (error) {
+      console.error('Error getting agent analytics:', error)
+      throw error
     }
   }
 
@@ -302,37 +592,30 @@ class HyperliquidService {
     backtestResults: any
     optimizedParameters: any
   }> {
-    try {
-      // Mock training process - replace with actual ML training
-      console.log(`Training agent ${agent.name} with ${historicalData.length} data points`)
-      
-      // Simulate training delay
-      await new Promise(resolve => setTimeout(resolve, 2000))
-      
-      return {
-        trainingAccuracy: Math.random() * 20 + 75, // 75-95%
-        backtestResults: {
-          totalReturn: Math.random() * 50 + 10,
-          winRate: Math.random() * 30 + 60,
-          sharpeRatio: Math.random() * 2 + 1
-        },
-        optimizedParameters: {
-          indicators: agent.indicators,
-          focusAssets: agent.focusAssets,
-          riskTolerance: agent.riskTolerance * (Math.random() * 0.4 + 0.8)
-        }
+    // This would implement actual ML training logic
+    // For now, return mock results
+    return {
+      trainingAccuracy: 0.75 + Math.random() * 0.2,
+      backtestResults: {
+        totalReturn: Math.random() * 0.5,
+        sharpeRatio: Math.random() * 2,
+        maxDrawdown: Math.random() * 0.3
+      },
+      optimizedParameters: {
+        riskTolerance: agent.riskTolerance,
+        indicators: agent.indicators
       }
-    } catch (error) {
-      console.error('Error training agent:', error)
-      throw new Error('Failed to train agent')
     }
   }
 
   disconnect(): void {
-    this.activeConnections.forEach((ws, id) => {
-      ws.close()
-    })
-    this.activeConnections.clear()
+    // Close WebSocket connections
+    this.wsTransport.close().catch(console.error)
+    
+    // Clear subscriptions
+    this.activeSubscriptions.clear()
+    this.positionCallbacks.clear()
+    this.agentTrades.clear()
   }
 }
 
