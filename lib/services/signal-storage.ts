@@ -1,5 +1,5 @@
 import { openDB, DBSchema, IDBPDatabase } from 'idb'
-import type { CryptoSignal } from '@/lib/api/crypto-api'
+import type { CryptoSignal } from '@/lib/types/hyperliquid-types'
 
 interface SignalResult {
   signalId: string

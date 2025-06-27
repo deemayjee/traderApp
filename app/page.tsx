@@ -1,15 +1,16 @@
 import { HeroSection } from "@/components/hero-section"
-import { FeatureSection } from "@/components/feature-section"
-import { Navbar } from "@/components/navbar"
 import { Footer } from "@/components/footer"
 
-export default function Home() {
+export const metadata = {
+  title: "HyperAgent - Autonomous Trading on Hyperliquid",
+  description: "Train AI agents to trade perpetual futures autonomously with advanced machine learning and risk management.",
+}
+
+export default function HomePage() {
   return (
-    <main className="flex min-h-screen flex-col">
-      <Navbar />
+    <div className="min-h-screen">
       <HeroSection />
-      <FeatureSection />
       <Footer />
-    </main>
+    </div>
   )
 }

@@ -59,7 +59,7 @@ export function WalletAuthProvider({ children }: { children: React.ReactNode }) 
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            wallet: { address: walletAddress, chain: 'solana' }
+            wallet: { address: walletAddress, chain: 'ethereum' }
           })
         }),
         supabase.rpc('set_current_wallet_address', {
@@ -97,14 +97,14 @@ export function WalletAuthProvider({ children }: { children: React.ReactNode }) 
           return
         }
 
-        // Then check Privy
+        // Then check Privy - get Ethereum wallet address
         if (authenticated && privyUser?.wallet?.address) {
           const walletAddress = privyUser.wallet.address
           const userData: User = {
             address: walletAddress,
             wallet: {
               address: walletAddress,
-              chain: 'solana',
+              chain: 'ethereum',
             },
             id: privyUser.id,
           }
@@ -132,8 +132,10 @@ export function WalletAuthProvider({ children }: { children: React.ReactNode }) 
     try {
       setShowConnectModal(true)
       await privyLogin()
+      setShowConnectModal(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')
+      setShowConnectModal(false)
       throw err
     }
   }
@@ -171,8 +173,8 @@ export function WalletAuthProvider({ children }: { children: React.ReactNode }) 
       <Suspense fallback={<Loading variant="fullscreen" />}>
         {showConnectModal && (
           <WalletConnectModal
+            isOpen={showConnectModal}
             onClose={() => setShowConnectModal(false)}
-            onError={(error) => setError(error)}
           />
         )}
         

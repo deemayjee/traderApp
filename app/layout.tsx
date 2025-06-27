@@ -3,7 +3,6 @@ import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
-import { NotificationProvider } from "@/contexts/notification-context"
 import { Toaster } from "@/components/ui/toaster"
 import { WalletProvider } from "@/components/auth/wallet-provider"
 import { WalletAuthProvider } from "@/components/auth/wallet-context"
@@ -13,9 +12,16 @@ import { AuthProvider } from "@/components/auth/auth-context"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Pally Traders | AI-Powered Social Trading",
-  description: "Connect with humans and AI agents for valuable crypto insights",
-  generator: 'Dmj'
+  title: "HyperAgent | Autonomous Trading AI",
+  description: "Train and deploy AI agents for autonomous trading on Hyperliquid. Advanced machine learning for superior trading performance.",
+  generator: 'HyperAgent',
+  keywords: "AI trading, autonomous trading, machine learning, algorithmic trading, Hyperliquid, trading bots, AI agents",
+  authors: [{ name: "HyperAgent Team" }],
+  openGraph: {
+    title: "HyperAgent | Autonomous Trading AI",
+    description: "Train and deploy AI agents for autonomous trading on Hyperliquid",
+    type: "website",
+  },
 }
 
 export default function RootLayout({
@@ -25,18 +31,16 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.className} antialiased`}>
+      <body className={`${inter.className} antialiased dark`}>
         <WalletProvider>
           <WalletAuthProvider>
             <AuthProvider>
-              <NotificationProvider>
-                <UserProfileProvider>
-                  <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} disableTransitionOnChange>
-                    {children}
-                    <Toaster />
-                  </ThemeProvider>
-                </UserProfileProvider>
-              </NotificationProvider>
+              <UserProfileProvider>
+                <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} disableTransitionOnChange>
+                  {children}
+                  <Toaster />
+                </ThemeProvider>
+              </UserProfileProvider>
             </AuthProvider>
           </WalletAuthProvider>
         </WalletProvider>

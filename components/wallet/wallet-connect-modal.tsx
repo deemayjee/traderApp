@@ -2,13 +2,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Loading } from "@/components/ui/loading"
 
 interface WalletConnectModalProps {
+  isOpen: boolean
   onClose: () => void
-  onError: (error: string) => void
 }
 
-export default function WalletConnectModal({ onClose, onError }: WalletConnectModalProps) {
+export default function WalletConnectModal({ isOpen, onClose }: WalletConnectModalProps) {
   return (
-    <Dialog open onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Connect Wallet</DialogTitle>

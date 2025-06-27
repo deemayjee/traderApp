@@ -1,5 +1,5 @@
 import { supabase, setCurrentWalletAddress } from '@/lib/supabase'
-import { CryptoAlert } from '@/lib/api/crypto-api'
+import { CryptoAlert } from '@/lib/types/hyperliquid-types'
 
 export async function fetchAlerts(walletAddress: string): Promise<CryptoAlert[]> {
   await setCurrentWalletAddress(walletAddress)

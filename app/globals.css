@@ -4,48 +4,57 @@
 
 @layer base {
   :root {
+    /* Dark theme as default */
+    --background: 210 20% 8%;
+    --foreground: 210 20% 98%;
+    --card: 210 20% 10%;
+    --card-foreground: 210 20% 95%;
+    --popover: 210 20% 10%;
+    --popover-foreground: 210 20% 95%;
+    --primary: 176 100% 70%; /* #68fff9 */
+    --primary-foreground: 210 20% 8%;
+    --secondary: 210 20% 15%;
+    --secondary-foreground: 210 20% 95%;
+    --muted: 210 20% 12%;
+    --muted-foreground: 210 20% 65%;
+    --accent: 176 100% 70%; /* #68fff9 */
+    --accent-foreground: 210 20% 8%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --success: 142 76% 36%;
+    --success-foreground: 210 40% 98%;
+    --border: 210 20% 18%;
+    --input: 210 20% 18%;
+    --ring: 176 100% 70%; /* #68fff9 */
+    --radius: 0.75rem;
+    --sidebar-background: 210 20% 9%;
+    --sidebar-foreground: 210 20% 90%;
+  }
+
+  .light {
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 98%;
+    --card: 0 0% 100%;
     --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 98%;
+    --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
+    --primary: 176 100% 40%; /* Darker version of #68fff9 for light theme */
     --primary-foreground: 210 40% 98%;
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
     --muted: 210 40% 96.1%;
     --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 176 100% 40%;
+    --accent-foreground: 210 40% 98%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
+    --success: 142 76% 36%;
+    --success-foreground: 210 40% 98%;
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --radius: 0.5rem;
-  }
-
-  .dark {
-    --background: 224 71% 4%;
-    --foreground: 213 31% 91%;
-    --card: 224 71% 6%;
-    --card-foreground: 215 20.2% 65.1%;
-    --popover: 224 71% 6%;
-    --popover-foreground: 215 20.2% 65.1%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 222.2 47.4% 11.2%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 223 47% 11%;
-    --muted-foreground: 215.4 16.3% 56.9%;
-    --accent: 216 34% 17%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 63% 31%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 216 34% 17%;
-    --input: 216 34% 17%;
-    --ring: 216 34% 17%;
+    --ring: 176 100% 40%;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 222.2 84% 4.9%;
   }
 }
 
@@ -71,36 +80,90 @@ body {
   @apply bg-muted-foreground;
 }
 
-/* Animations */
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
+/* Hyperliquid brand colors */
+.hyperliquid-primary {
+  color: #68fff9;
+}
+
+.hyperliquid-bg {
+  background-color: #68fff9;
+}
+
+.hyperliquid-gradient {
+  background: linear-gradient(135deg, #68fff9 0%, #4ecdc4 100%);
+}
+
+/* Trading specific styles */
+.profit {
+  @apply text-green-400;
+}
+
+.loss {
+  @apply text-red-400;
+}
+
+.neutral {
+  @apply text-gray-400;
+}
+
+/* Glowing effects for accent elements */
+.glow-primary {
+  box-shadow: 0 0 20px rgba(104, 255, 249, 0.3);
+}
+
+.glow-primary-strong {
+  box-shadow: 0 0 30px rgba(104, 255, 249, 0.5);
+}
+
+/* Custom animations */
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(104, 255, 249, 0.3);
   }
   50% {
-    opacity: 0.5;
+    box-shadow: 0 0 30px rgba(104, 255, 249, 0.6);
   }
 }
 
-.animate-pulse {
-  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes slideInFromBottom {
+  0% {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in {
+  animation: slideInFromBottom 0.6s ease-out forwards;
 }
 
 /* Make wallet adapter buttons pill-shaped */
 .wallet-adapter-button {
-  border-radius: 9999px !important; /* rounded-full */
+  border-radius: 9999px !important;
   height: 40px !important;
-  padding-left: 1.25rem !important; /* px-5 */
-  padding-right: 1.25rem !important; /* px-5 */
+  padding-left: 1.25rem !important;
+  padding-right: 1.25rem !important;
+  background-color: hsl(var(--primary)) !important;
+  color: hsl(var(--primary-foreground)) !important;
 }
 
 .wallet-adapter-dropdown-list,
 .wallet-adapter-dropdown-list-item {
   border-radius: 1rem !important;
+  background-color: hsl(var(--popover)) !important;
+  border-color: hsl(var(--border)) !important;
 }
 
 .wallet-adapter-modal-wrapper {
   border-radius: 1.5rem !important;
+  background-color: hsl(var(--background)) !important;
 }
 
 .wallet-adapter-modal-button-close {
@@ -108,38 +171,55 @@ body {
 }
 
 @layer utilities {
-  /* Make bg-white responsive to dark mode */
-  .dark .bg-white {
-    background-color: hsl(var(--background));
+  /* Chart styles */
+  .recharts-cartesian-grid-horizontal line,
+  .recharts-cartesian-grid-vertical line {
+    stroke: hsl(var(--border));
+    stroke-opacity: 0.5;
   }
   
-  /* Make border-gray-200 responsive to dark mode */
-  .dark .border-gray-200 {
-    border-color: hsl(var(--border));
+  /* Trading card styles */
+  .trading-card {
+    @apply bg-card/50 backdrop-blur-sm border border-border/50 rounded-lg;
   }
   
-  /* Make text-gray-900 responsive to dark mode */
-  .dark .text-gray-900 {
-    color: hsl(var(--foreground));
+  .trading-card:hover {
+    @apply bg-card/70 border-primary/30;
   }
   
-  /* Make text-gray-600 responsive to dark mode */
-  .dark .text-gray-600 {
-    color: hsl(var(--muted-foreground));
+  /* Agent status indicators */
+  .agent-active {
+    @apply bg-green-500/20 text-green-400 border-green-500/30;
   }
   
-  /* Make data-[state=active]:bg-white responsive to dark mode */
-  .dark [data-state="active"].data-\[state\=active\]\:bg-white {
-    background-color: hsl(var(--muted));
+  .agent-training {
+    @apply bg-yellow-500/20 text-yellow-400 border-yellow-500/30;
+  }
+  
+  .agent-inactive {
+    @apply bg-gray-500/20 text-gray-400 border-gray-500/30;
+  }
+  
+  /* Improved spacing for cleaner look */
+  .container {
+    @apply max-w-6xl mx-auto px-6 md:px-8;
   }
 
-  /* Add hover effect for cards in both themes */
-  .hover\:bg-accent:hover {
-    background-color: hsl(var(--accent));
+  section {
+    @apply scroll-mt-16;
   }
 
-  /* Add subtle shadow to cards in light mode */
-  .light .card {
-    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  /* Cleaner spacing utilities */
+  .space-y-clean > * + * {
+    @apply mt-6;
+  }
+
+  .space-y-loose > * + * {
+    @apply mt-12;
+  }
+
+  /* Better section dividers */
+  .section-divider {
+    @apply border-t border-border/30 my-20;
   }
 }

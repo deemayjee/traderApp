@@ -1,4 +1,4 @@
-import type { CryptoSignal } from '@/lib/api/crypto-api'
+import type { CryptoSignal } from '@/lib/types/hyperliquid-types'
 
 export interface ValidationResult {
   isValid: boolean

@@ -1,531 +1,402 @@
 "use client"
 
-import { useState, useEffect, useMemo, useRef, useCallback } from "react"
-import { DashboardHeader } from "@/components/dashboard/dashboard-header"
-import { TopPerformers } from "@/components/dashboard/top-performers"
-import { SimplePriceChart } from "@/components/dashboard/simple-price-chart"
-import { AIInsights } from "@/components/dashboard/ai-insights"
-import { PortfolioOverview } from "@/components/dashboard/portfolio-overview"
-import { TradingAlerts } from "@/components/dashboard/trading-alerts"
-import { MarketOverview } from "@/components/dashboard/market-overview"
-import { Loader2, Bell } from "lucide-react"
-import {
-  fetchBinanceTopTokens,
-  type FormattedCryptoAsset,
-  type CryptoAlert,
-  type PortfolioAsset,
-} from "@/lib/api/crypto-api"
-import { CreateAlertDialog } from "@/components/dashboard/create-alert-dialog"
-import { AlertMonitor } from "@/lib/services/alert-monitor"
-import { PriceMonitor } from "@/lib/services/price-monitor"
-import { toast } from "@/components/ui/use-toast"
+import { useState, useEffect } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Progress } from "@/components/ui/progress"
+import { 
+  Bot, 
+  TrendingUp, 
+  TrendingDown, 
+  DollarSign, 
+  Activity, 
+  Brain,
+  Zap,
+  Target,
+  Plus,
+  ArrowUp,
+  ArrowDown,
+  BarChart3,
+  AlertTriangle,
+  CheckCircle,
+  Clock,
+  Sparkles
+} from "lucide-react"
+import Link from "next/link"
 import { useWalletAuth } from "@/components/auth/wallet-context"
-import { fetchAlerts, createAlert, updateAlert, deleteAlert } from "@/lib/services/alert-supabase"
-import { EditAlertDialog } from "@/components/dashboard/edit-alert-dialog"
-import { useWalletTokens } from "@/hooks/use-wallet-tokens"
+import { CreateAgentDialog, AIAgent } from "@/components/ai-agents/create-agent-dialog"
 
-// Define the time range type that matches SimplePriceChart's expectations
-type ChartTimeRange = "1m" | "5m" | "15m" | "1h" | "4h" | "1d" | "7d" | "30d"
+// Mock data - replace with real data from your services
+const mockAgents: AIAgent[] = [
+  {
+    id: "agent-1",
+    name: "Momentum Master",
+    type: "Technical Analysis",
+    description: "Trades based on momentum indicators and volume analysis",
+    active: true,
+    accuracy: 76.8,
+    signals: 234,
+    lastSignal: "BUY ETH at $2,450",
+    custom: true,
+    riskTolerance: 70,
+    focusAssets: ["ETH", "SOL", "BTC"],
+    indicators: ["RSI", "MACD", "Moving Averages"]
+  },
+  {
+    id: "agent-2", 
+    name: "Scalp Hunter",
+    type: "Technical Analysis",
+    description: "High-frequency scalping strategy for quick profits",
+    active: false,
+    accuracy: 68.2,
+    signals: 1456,
+    lastSignal: "Training in progress...",
+    custom: true,
+    riskTolerance: 30,
+    focusAssets: ["BTC", "ETH"],
+    indicators: ["Bollinger Bands", "Volume"]
+  },
+  {
+    id: "agent-3", 
+    name: "DeFi Yield Hunter",
+    type: "On-chain Analysis",
+    description: "Identifies high-yield opportunities across DeFi protocols",
+    active: true,
+    accuracy: 84.5,
+    signals: 67,
+    lastSignal: "YIELD FARM detected: 12.4% APY",
+    custom: true,
+    riskTolerance: 85,
+    focusAssets: ["USDC", "USDT", "DAI"],
+    indicators: ["TVL", "Volume", "Liquidity"]
+  }
+]
 
-// Define the insight type that matches AIInsights' expectations
-interface Insight {
-  symbol: string
-  insight: string
-  confidence: "high" | "medium" | "low"
-  timestamp: string
-}
-
-// Define the AI insight object returned from the API
-interface AIInsightResponse {
-  symbol: string
-  insight_text: string
-  confidence: "high" | "medium" | "low"
-  timestamp: string
-}
-
-// Define the alert type that matches TradingAlerts' expectations
-interface TradingAlert {
-  id: string
-  type: "price" | "volume" | "trend"
-  symbol: string
-  condition: string
-  value: number
-  active: boolean
-  priority: "high" | "medium" | "low"
-  timestamp: string
-}
+// Mock market data
+const mockMarketData = [
+  { symbol: "BTC", price: 67340, change: 2.4, volume: "1.2B" },
+  { symbol: "ETH", price: 2450, change: -1.8, volume: "890M" },
+  { symbol: "HYPE", price: 0.85, change: 12.7, volume: "45M" },
+  { symbol: "SOL", price: 142, change: 5.2, volume: "320M" }
+]
 
 export default function Dashboard() {
-  const [marketData, setMarketData] = useState<FormattedCryptoAsset[]>([])
-  const [selectedToken, setSelectedToken] = useState<FormattedCryptoAsset | null>(null)
-  const [timeRange, setTimeRange] = useState<ChartTimeRange>("1d")
-  const [alerts, setAlerts] = useState<CryptoAlert[]>([])
-  const [showCreateAlert, setShowCreateAlert] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const alertMonitorRef = useRef<AlertMonitor | null>(null)
-  const priceMonitorRef = useRef<PriceMonitor | null>(null)
-  const { getWalletAddress } = useWalletAuth()
-  const [editingAlert, setEditingAlert] = useState<CryptoAlert | null>(null)
-  const [isEditAlertOpen, setIsEditAlertOpen] = useState(false)
-  const { assets: walletAssets, isLoading: walletLoading } = useWalletTokens();
-  const [highPriorityInsights, setHighPriorityInsights] = useState<Insight[]>([]);
-  const marketDataRef = useRef<FormattedCryptoAsset[]>([]);
-  marketDataRef.current = marketData;
+  const { user } = useWalletAuth()
+  const [agents, setAgents] = useState<AIAgent[]>(mockAgents)
+  const [showCreateAgent, setShowCreateAgent] = useState(false)
+  const [totalPnl, setTotalPnl] = useState(1091.20)
+  const [todayPnl, setTodayPnl] = useState(287.45)
+  const [openPositions, setOpenPositions] = useState(8)
+  const [totalVolume, setTotalVolume] = useState(12450)
 
-  // Load alerts from Supabase
+  // Redirect to login if not authenticated
   useEffect(() => {
-    const loadAlerts = async () => {
-      try {
-        const walletAddress = getWalletAddress()
-        if (!walletAddress) return
-        const storedAlerts = await fetchAlerts(walletAddress)
-        setAlerts(storedAlerts)
-      } catch (error) {
-        console.error("Error loading alerts:", error)
-      }
+    if (!user) {
+      // Could redirect to auth page or show connect wallet modal
+      console.log("User not connected")
     }
-    loadAlerts()
-  }, [getWalletAddress])
+  }, [user])
 
-  // Memoize the price monitor callback to prevent unnecessary re-renders
-  const handlePriceUpdate = useCallback((updatedAssets: FormattedCryptoAsset[]) => {
-    setMarketData(prevData => {
-      // Only update if there are actual changes
-      const hasChanges = updatedAssets.some((newAsset, index) => {
-        const oldAsset = prevData[index]
-        return oldAsset && (
-          newAsset.price !== oldAsset.price ||
-          newAsset.change !== oldAsset.change ||
-          newAsset.volume !== oldAsset.volume
-        )
-      })
-
-      return hasChanges ? updatedAssets : prevData
-    })
-
-    // Update selected token only if it exists and has changed
-    if (selectedToken) {
-      const updatedToken = updatedAssets.find(asset => asset.symbol === selectedToken.symbol)
-      if (updatedToken && (
-        updatedToken.price !== selectedToken.price ||
-        updatedToken.change !== selectedToken.change ||
-        updatedToken.volume !== selectedToken.volume
-      )) {
-        setSelectedToken(updatedToken)
-      }
+  const handleCreateAgent = (newAgent: Omit<AIAgent, "id">) => {
+    const agent: AIAgent = {
+      ...newAgent,
+      id: `agent-${Date.now()}`,
     }
-  }, [selectedToken])
-
-  useEffect(() => {
-    // Initialize alert monitor
-    alertMonitorRef.current = new AlertMonitor({
-      onAlertTriggered: (alert) => {
-        toast({
-          title: "Alert Triggered!",
-          description: `${alert.symbol} ${alert.type} alert: ${alert.condition} ${alert.value}`,
-          action: <Bell className="h-4 w-4" />,
-        })
-      }
-    })
-
-    // Initialize price monitor with memoized callback
-    priceMonitorRef.current = new PriceMonitor({
-      onPriceUpdate: handlePriceUpdate
-    })
-
-    return () => {
-      // Cleanup monitors
-      alertMonitorRef.current?.stop()
-      priceMonitorRef.current?.stop()
-    }
-  }, [handlePriceUpdate])
-
-  useEffect(() => {
-    // Update alert monitor when alerts change
-    if (alertMonitorRef.current) {
-      alertMonitorRef.current.updateAlerts(alerts)
-      const activeAlerts = alerts.filter(alert => alert.active)
-      if (activeAlerts.length > 0) {
-        alertMonitorRef.current.start(activeAlerts)
-      } else {
-        alertMonitorRef.current.stop()
-      }
-    }
-  }, [alerts])
-
-  useEffect(() => {
-    // Update price monitor when market data changes
-    if (priceMonitorRef.current) {
-      priceMonitorRef.current.updateAssets(marketData)
-    }
-  }, [marketData])
-
-  useEffect(() => {
-    async function loadMarketData() {
-      try {
-        setIsLoading(true)
-        const data = await fetchBinanceTopTokens(10)
-        setMarketData(data)
-        
-        // Set initial selected token
-        if (data.length > 0) {
-          setSelectedToken(data[0])
-        }
-
-        setError(null)
-      } catch (err) {
-        console.error("Error loading market data:", err)
-        setError("Failed to load market data. Please try again later.")
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    loadMarketData()
-  }, [])
-
-  useEffect(() => {
-    // Fetch latest insights on page load
-    const fetchExistingInsights = async () => {
-      const res = await fetch('/api/ai-insights?limit=3');
-      const data = await res.json();
-      if (data.insights) {
-        setHighPriorityInsights(data.insights.map((i: AIInsightResponse) => ({
-          symbol: i.symbol,
-          insight: i.insight_text,
-          confidence: i.confidence,
-          timestamp: i.timestamp,
-        })));
-      }
-    };
-    fetchExistingInsights();
-  }, []);
-
-  useEffect(() => {
-    let isMounted = true;
-    const fetchInsights = async () => {
-      const currentMarketData = marketDataRef.current;
-      const significantChanges = currentMarketData.filter(token => Math.abs(token.changePercent) > 5).slice(0, 3);
-      // Round changePercent for DB consistency
-      console.log('[AI Insights] fetchInsights called. Significant changes:', significantChanges.map(t => ({ symbol: t.symbol, changePercent: Math.round(t.changePercent * 100) / 100 })));
-      if (significantChanges.length === 0) {
-        if (isMounted) setHighPriorityInsights([]);
-        return;
-      }
-      const insights: Insight[] = [];
-      for (const token of significantChanges) {
-        const symbol = token.symbol;
-        const changePercent = Math.round(token.changePercent * 100) / 100;
-        const insightText = `Strong ${changePercent > 0 ? 'bullish' : 'bearish'} momentum detected`;
-        const confidence = 'high';
-        // Try to fetch from DB
-        const res = await fetch(`/api/ai-insights?symbol=${encodeURIComponent(symbol)}&changePercent=${encodeURIComponent(changePercent)}`);
-        const data = await res.json();
-        if (data.insight) {
-          insights.push({
-            symbol,
-            insight: data.insight.insight_text,
-            confidence: data.insight.confidence,
-            timestamp: data.insight.timestamp,
-          });
-        } else {
-          // Not found, create
-          const postRes = await fetch('/api/ai-insights', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ symbol, changePercent, insightText, confidence }),
-          });
-          const postData = await postRes.json();
-          if (postData.insight) {
-            insights.push({
-              symbol,
-              insight: postData.insight.insight_text,
-              confidence: postData.insight.confidence,
-              timestamp: postData.insight.timestamp,
-            });
-          }
-        }
-      }
-      if (isMounted) setHighPriorityInsights(insights);
-    };
-    // Set up interval
-    const interval = setInterval(async () => {
-      await fetchInsights();
-      // After generating, fetch the latest insights to display
-      const res = await fetch('/api/ai-insights?limit=3');
-      const data = await res.json();
-      if (data.insights) {
-        setHighPriorityInsights(data.insights.map((i: AIInsightResponse) => ({
-          symbol: i.symbol,
-          insight: i.insight_text,
-          confidence: i.confidence,
-          timestamp: i.timestamp,
-        })));
-      }
-    }, 60 * 60 * 1000); // every hour
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
-    };
-  }, []);
-
-  const handleTokenSelect = (token: FormattedCryptoAsset) => {
-    setSelectedToken(token)
+    setAgents(prev => [...prev, agent])
+    setShowCreateAgent(false)
   }
 
-  const handleTimeRangeChange = (newRange: ChartTimeRange) => {
-    setTimeRange(newRange)
-  }
+  const activeAgents = agents.filter(agent => agent.active)
+  const accountValue = 45750.25 // Fixed account value for display
+  const portfolioChange = ((totalPnl / accountValue) * 100)
 
-  const handleCreateAlert = () => {
-    setShowCreateAlert(true)
-  }
-
-  const handleCreateAlertSubmit = async (newAlert: Omit<CryptoAlert, "id">) => {
-    try {
-      const walletAddress = getWalletAddress()
-      if (!walletAddress) throw new Error('No wallet address')
-      const created = await createAlert(newAlert, walletAddress)
-      setAlerts(prev => [...prev, created])
-      setShowCreateAlert(false)
-      toast({
-        title: "Alert created",
-        description: `${created.symbol} ${created.type} alert when ${created.condition} ${created.value} has been created.`,
-      })
-    } catch (error) {
-      console.error("Error creating alert:", error)
-      toast({
-        title: "Error",
-        description: "Failed to create alert. Please try again.",
-        variant: "destructive"
-      })
-    }
-  }
-
-  const handleDeleteAlert = async (alertId: string) => {
-    try {
-      const walletAddress = getWalletAddress()
-      if (!walletAddress) throw new Error('No wallet address')
-      await deleteAlert(alertId, walletAddress)
-      setAlerts(prev => prev.filter(alert => alert.id !== alertId))
-      toast({
-        title: "Alert deleted",
-        description: "Alert has been deleted successfully.",
-      })
-    } catch (error) {
-      console.error("Error deleting alert:", error)
-      toast({
-        title: "Error",
-        description: "Failed to delete alert. Please try again.",
-        variant: "destructive"
-      })
-    }
-  }
-
-  const handleToggleAlert = async (alertId: string) => {
-    try {
-      const alert = alerts.find(a => a.id === alertId)
-      if (!alert) return
-      const updated = await updateAlert({ ...alert, active: !alert.active })
-      setAlerts(prev => prev.map(a => a.id === updated.id ? updated : a))
-    } catch (error) {
-      console.error("Error toggling alert:", error)
-      toast({
-        title: "Error",
-        description: "Failed to toggle alert. Please try again.",
-        variant: "destructive"
-      })
-    }
-  }
-
-  const handleEditAlert = (alert: CryptoAlert) => {
-    setEditingAlert(alert)
-    setIsEditAlertOpen(true)
-  }
-
-  const handleSaveEditedAlert = async (updatedAlert: CryptoAlert) => {
-    try {
-      const walletAddress = getWalletAddress()
-      if (!walletAddress) throw new Error('No wallet address')
-      const updated = await updateAlert({ ...updatedAlert, wallet_address: walletAddress })
-      setAlerts(prev => prev.map(a => a.id === updated.id ? updated : a))
-      setIsEditAlertOpen(false)
-      setEditingAlert(null)
-      toast({
-        title: 'Alert updated',
-        description: `Alert for ${updated.symbol} updated successfully.`
-      })
-    } catch (error) {
-      console.error('Error updating alert:', error)
-      toast({
-        title: 'Error',
-        description: 'Failed to update alert. Please try again.',
-        variant: 'destructive',
-      })
-    }
-  }
-
-  // Get top performers
-  const topPerformers = [...marketData]
-    .sort((a, b) => b.changePercent - a.changePercent)
-    .slice(0, 3)
-
-  // Prepare chart component
-  const chartComponent = selectedToken ? (
-    <SimplePriceChart 
-      selectedCoin={selectedToken.symbol} 
-      timeRange={timeRange}
-      onTimeRangeChange={handleTimeRangeChange}
-    />
-  ) : null
-
-  // Filter alerts to show only high-priority ones on dashboard
-  const highPriorityAlerts = useMemo(() => 
-    alerts
-      .filter(alert => alert.active)
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-      .slice(0, 3), // Show only the 3 most recent active alerts
-    [alerts]
-  )
-
-  if (isLoading) {
+  if (!user) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-muted/10">
+        <Card className="w-full max-w-lg border-primary/20 shadow-2xl">
+          <CardHeader className="text-center pb-2">
+            <div className="mx-auto w-16 h-16 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center mb-4">
+              <Bot className="w-8 h-8 text-primary-foreground" />
+            </div>
+            <CardTitle className="text-2xl bg-gradient-to-r from-foreground to-primary bg-clip-text text-transparent">
+              HyperAgent
+            </CardTitle>
+            <CardDescription className="text-base">
+              Connect your wallet to start autonomous trading with AI
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <Link href="/auth/login">
+              <Button className="w-full bg-primary hover:bg-primary/90 text-primary-foreground h-12 text-lg glow-primary">
+                <Zap className="w-5 h-5 mr-2" />
+                Connect Wallet
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
       </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <>
-        <DashboardHeader />
-        <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded relative mb-6 mt-6">
-          <strong className="font-bold">Note: </strong>
-          <span className="block sm:inline">{error}</span>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2">
-            {chartComponent}
-            {marketData.length > 0 && (
-              <MarketOverview 
-                marketData={marketData} 
-                className="mt-6" 
-                onTokenSelect={handleTokenSelect}
-              />
-            )}
-          </div>
-          <div className="space-y-6">
-            <AIInsights insights={highPriorityInsights} isPreview={true} />
-            <TradingAlerts 
-              alerts={highPriorityAlerts}
-              onCreateAlert={handleCreateAlert}
-              onDeleteAlert={handleDeleteAlert}
-              onToggleAlert={handleToggleAlert}
-              onEditAlert={handleEditAlert}
-              isPreview={true}
-            />
-            {walletLoading ? (
-              <div className="flex justify-center items-center h-40">
-                <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
-              </div>
-            ) : (
-              <PortfolioOverview assets={walletAssets} />
-            )}
-          </div>
-        </div>
-
-        <CreateAlertDialog 
-          open={showCreateAlert} 
-          onOpenChange={setShowCreateAlert}
-          onCreateAlert={handleCreateAlertSubmit}
-          cryptoOptions={marketData.map(token => ({
-            id: token.id,
-            name: token.name,
-            symbol: token.symbol,
-            price: token.priceValue
-          }))}
-          walletAddress={getWalletAddress() || ''}
-        />
-
-        <EditAlertDialog
-          open={isEditAlertOpen}
-          onOpenChange={setIsEditAlertOpen}
-          alert={editingAlert}
-          onEditAlert={handleSaveEditedAlert}
-          cryptoOptions={marketData.map(token => ({
-            id: token.id,
-            name: token.name,
-            symbol: token.symbol,
-            price: token.priceValue
-          }))}
-        />
-      </>
     )
   }
 
   return (
-    <>
-      <DashboardHeader />
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
-        <div className="lg:col-span-2">
-          {chartComponent}
-          {marketData.length > 0 && (
-            <MarketOverview 
-              marketData={marketData} 
-              className="mt-6" 
-              onTokenSelect={handleTokenSelect}
-            />
-          )}
-        </div>
-        <div className="space-y-6">
-          <AIInsights insights={highPriorityInsights} isPreview={true} />
-          <TradingAlerts 
-            alerts={highPriorityAlerts}
-            onCreateAlert={handleCreateAlert}
-            onDeleteAlert={handleDeleteAlert}
-            onToggleAlert={handleToggleAlert}
-            onEditAlert={handleEditAlert}
-            isPreview={true}
-          />
-          {walletLoading ? (
-            <div className="flex justify-center items-center h-40">
-              <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/5">
+      {/* Hero Header */}
+      <div className="border-b border-border/40 bg-background/95 backdrop-blur relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-primary/5" />
+        <div className="container mx-auto px-6 py-8 relative">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+            <div className="space-y-2">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center">
+                  <Brain className="w-6 h-6 text-primary-foreground" />
+                </div>
+                <div>
+                  <h1 className="text-3xl font-bold bg-gradient-to-r from-foreground to-primary bg-clip-text text-transparent">
+                    Trading Command Center
+                  </h1>
+                  <p className="text-muted-foreground text-lg">
+                    {activeAgents.length} AI agents actively trading • {openPositions} positions open
+                  </p>
+                </div>
+              </div>
             </div>
-          ) : (
-            <PortfolioOverview assets={walletAssets} />
-          )}
+            <div className="flex items-center gap-4">
+              <Badge variant="outline" className="h-8 px-4 border-green-200 text-green-700 bg-green-50">
+                <CheckCircle className="w-4 h-4 mr-2" />
+                All Systems Online
+              </Badge>
+              <Button 
+                onClick={() => setShowCreateAgent(true)}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground h-10 glow-primary"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Deploy New Agent
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
 
-      <CreateAlertDialog 
-        open={showCreateAlert} 
-        onOpenChange={setShowCreateAlert}
-        onCreateAlert={handleCreateAlertSubmit}
-        cryptoOptions={marketData.map(token => ({
-          id: token.id,
-          name: token.name,
-          symbol: token.symbol,
-          price: token.priceValue
-        }))}
-        walletAddress={getWalletAddress() || ''}
-      />
+      <div className="container mx-auto px-6 py-6">
+        {/* Main Grid Layout */}
+        <div className="space-y-6">
+          
+          {/* Top Section - Portfolio and Quick Stats */}
+          <div className="grid grid-cols-12 gap-6">
+            {/* Portfolio Overview - Large Card */}
+            <div className="col-span-12 lg:col-span-8">
+              <Card className="border-primary/20 shadow-lg bg-gradient-to-br from-background to-muted/20">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 text-xl">
+                    <DollarSign className="w-5 h-5 text-primary" />
+                    Portfolio Overview
+                  </CardTitle>
+                  <CardDescription>Your autonomous trading performance</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Main Portfolio Stats */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <p className="text-sm text-muted-foreground">Total Value</p>
+                      <p className="text-3xl font-bold">${accountValue.toLocaleString()}</p>
+                      <div className="flex items-center gap-2">
+                        {portfolioChange >= 0 ? (
+                          <ArrowUp className="w-4 h-4 text-green-500" />
+                        ) : (
+                          <ArrowDown className="w-4 h-4 text-red-500" />
+                        )}
+                        <span className={`text-sm font-medium ${portfolioChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                          {portfolioChange >= 0 ? '+' : ''}{portfolioChange.toFixed(2)}%
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <p className="text-sm text-muted-foreground">Today's PnL</p>
+                      <p className={`text-3xl font-bold ${todayPnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                        {todayPnl >= 0 ? '+' : ''}${todayPnl.toFixed(2)}
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">24h Volume:</span>
+                        <span className="text-sm font-medium">${totalVolume.toLocaleString()}</span>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <p className="text-sm text-muted-foreground">Success Rate</p>
+                      <p className="text-3xl font-bold text-primary">74.2%</p>
+                      <Progress value={74.2} className="h-2" />
+                    </div>
+                  </div>
 
-      <EditAlertDialog
-        open={isEditAlertOpen}
-        onOpenChange={setIsEditAlertOpen}
-        alert={editingAlert}
-        onEditAlert={handleSaveEditedAlert}
-        cryptoOptions={marketData.map(token => ({
-          id: token.id,
-          name: token.name,
-          symbol: token.symbol,
-          price: token.priceValue
-        }))}
+                  {/* Quick Actions */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <Link href="/ai-agents">
+                      <Button variant="outline" className="w-full h-14 flex items-center gap-2">
+                        <Bot className="w-4 h-4" />
+                        <span className="text-xs">Manage Agents</span>
+                      </Button>
+                    </Link>
+                    <Link href="/dashboard/live-trading">
+                      <Button variant="outline" className="w-full h-14 flex items-center gap-2">
+                        <Activity className="w-4 h-4" />
+                        <span className="text-xs">Live Trading</span>
+                      </Button>
+                    </Link>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* System Status - Compact */}
+            <div className="col-span-12 lg:col-span-4">
+              <Card className="border-border/50 h-full">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg">System Status</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-3">
+                      <div className="flex flex-col items-center text-center">
+                        <span className="text-xs text-muted-foreground mb-1">Hyperliquid API</span>
+                        <Badge variant="outline" className="border-green-200 text-green-700 text-xs">
+                          <CheckCircle className="w-3 h-3 mr-1" />
+                          Online
+                        </Badge>
+                      </div>
+                      <div className="flex flex-col items-center text-center">
+                        <span className="text-xs text-muted-foreground mb-1">AI Engine</span>
+                        <Badge variant="outline" className="border-green-200 text-green-700 text-xs">
+                          <Sparkles className="w-3 h-3 mr-1" />
+                          Active
+                        </Badge>
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="flex flex-col items-center text-center">
+                        <span className="text-xs text-muted-foreground mb-1">Risk Monitor</span>
+                        <Badge variant="outline" className="border-green-200 text-green-700 text-xs">
+                          <Target className="w-3 h-3 mr-1" />
+                          Monitoring
+                        </Badge>
+                      </div>
+                      <div className="flex flex-col items-center text-center">
+                        <span className="text-xs text-muted-foreground mb-1">Next Rebalance</span>
+                        <Badge variant="outline" className="border-blue-200 text-blue-700 text-xs">
+                          <Clock className="w-3 h-3 mr-1" />
+                          4m 32s
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Quick Market Overview */}
+                  <div className="pt-3 border-t border-border/30">
+                    <div className="grid grid-cols-2 gap-3">
+                      {mockMarketData.slice(0, 4).map((market) => (
+                        <div key={market.symbol} className="flex items-center justify-between text-sm">
+                          <span className="font-medium">{market.symbol}</span>
+                          <div className={`flex items-center gap-1 ${market.change >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                            {market.change >= 0 ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
+                            <span className="text-xs font-medium">{market.change >= 0 ? '+' : ''}{market.change}%</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+
+          {/* Active Agents Grid - Now directly below without spacing */}
+          <Card className="border-border/50">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-xl">Active AI Agents</CardTitle>
+                <Badge variant="outline" className="border-primary/30 text-primary">
+                  {activeAgents.length} Active
+                </Badge>
+              </div>
+              <CardDescription>Your autonomous trading agents and their performance</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {agents.map((agent) => (
+                  <Link key={agent.id} href={`/ai-agents/${agent.id}`}>
+                    <Card className={`cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-[1.02] ${
+                      agent.active 
+                        ? 'border-primary/30 bg-gradient-to-br from-primary/5 to-transparent' 
+                        : 'border-border/50 opacity-75'
+                    }`}>
+                      <CardContent className="p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Brain className="w-4 h-4 text-primary" />
+                            <span className="font-medium text-sm truncate">{agent.name}</span>
+                          </div>
+                          <Badge variant={agent.active ? "default" : "secondary"} className="text-xs">
+                            {agent.active ? "Live" : "Paused"}
+                          </Badge>
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Accuracy</span>
+                            <span className="font-medium">{agent.accuracy}%</span>
+                          </div>
+                          <Progress value={agent.accuracy} className="h-1.5" />
+                        </div>
+                        
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-xs">
+                            <span className="text-muted-foreground">Signals</span>
+                            <span>{agent.signals}</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {agent.lastSignal}
+                          </p>
+                        </div>
+                        
+                        <div className="flex gap-1">
+                          {agent.focusAssets.slice(0, 3).map((asset) => (
+                            <Badge key={asset} variant="outline" className="text-xs px-2 py-0">
+                              {asset}
+                            </Badge>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </Link>
+                ))}
+                
+                {/* Create New Agent Card */}
+                <Card 
+                  className="cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-[1.02] border-dashed border-2 border-primary/30"
+                  onClick={() => setShowCreateAgent(true)}
+                >
+                  <CardContent className="p-4 flex flex-col items-center justify-center h-full space-y-3 text-center">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                      <Plus className="w-5 h-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-sm">Create New Agent</p>
+                      <p className="text-xs text-muted-foreground">Deploy autonomous AI trader</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      <CreateAgentDialog
+        open={showCreateAgent}
+        onOpenChange={setShowCreateAgent}
+        onCreateAgent={handleCreateAgent}
       />
-    </>
+    </div>
   )
 }

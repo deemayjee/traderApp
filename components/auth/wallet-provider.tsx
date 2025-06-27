@@ -1,7 +1,6 @@
 "use client"
 
 import { PrivyProvider } from "@privy-io/react-auth"
-import { toSolanaWalletConnectors } from "@privy-io/react-auth/solana"
 import { useRouter } from "next/navigation"
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
@@ -12,15 +11,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID || ""}
       config={{
         appearance: {
-          accentColor: "#6A6FF5",
+          accentColor: "#68fff9", // Hyperliquid brand color
           theme: "#222224",
           showWalletLoginFirst: true,
           logo: "https://auth.privy.io/logos/privy-logo-dark.png",
-          walletChainType: "solana-only",
+          walletChainType: "ethereum-only",
           walletList: [
-            "phantom",
-            "solflare",
-            "backpack",
+            "metamask",
+            "coinbase_wallet",
+            "rainbow",
+            "trust_wallet",
+            "walletconnect"
           ]
         },
         loginMethods: ["wallet"],
@@ -29,19 +30,37 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           showWalletUIs: false,
           ethereum: {
             createOnLogin: "off"
-          },
-          solana: {
-            createOnLogin: "off"
           }
         },
         mfa: {
           noPromptOnMfaRequired: false
         },
-        externalWallets: {
-          solana: {
-            connectors: toSolanaWalletConnectors()
-          }
-        }
+        supportedChains: [
+          {
+            id: 999, // Hyperliquid EVM Chain ID
+            name: "Hyperliquid EVM",
+            network: "hyperliquid",
+            nativeCurrency: {
+              name: "HYPE",
+              symbol: "HYPE",
+              decimals: 18,
+            },
+            rpcUrls: {
+              default: {
+                http: ["https://rpc.hyperliquid.xyz/evm"],
+              },
+              public: {
+                http: ["https://rpc.hyperliquid.xyz/evm"],
+              },
+            },
+            blockExplorers: {
+              default: {
+                name: "Hyperliquid Explorer",
+                url: "https://hyperfoundation.org",
+              },
+            },
+          },
+        ]
       }}
     >
       {children}

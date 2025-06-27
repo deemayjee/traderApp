@@ -1,4 +1,4 @@
-import type { CryptoAsset } from "@/lib/api/crypto-api"
+import type { CryptoAsset } from "@/lib/types/hyperliquid-types"
 import type { SignalAnalysis } from "./ai-agent-service"
 
 export class MacroAnalyzer {
@@ -68,8 +68,7 @@ export class MacroAnalyzer {
           confidence: Math.min(100, confidence),
           signal: signals.join(" + "),
           price: asset.current_price,
-          indicators: signals,
-          riskScore,
+          timestamp: Date.now(),
         }
       }
 

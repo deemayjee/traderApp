@@ -1,4 +1,4 @@
-import { CryptoAlert } from "@/lib/api/crypto-api"
+import { CryptoAlert } from "@/lib/types/hyperliquid-types"
 
 export const alertStorage = {
   async saveAlert(alert: CryptoAlert): Promise<void> {

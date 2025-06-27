@@ -1,4 +1,4 @@
-import { FormattedCryptoAsset } from "@/lib/api/crypto-api"
+import { FormattedCryptoAsset } from "@/lib/types/hyperliquid-types"
 import { toast } from "@/components/ui/use-toast"
 
 interface PriceMonitorOptions {
