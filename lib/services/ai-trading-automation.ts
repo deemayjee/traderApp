@@ -46,27 +46,41 @@ class AITradingAutomation {
   private lastSignals = new Map<string, TradingSignal[]>()
   private isRunning = false
   
-  // Default configuration
+  // Default configuration with safety overrides from environment
   private defaultConfig: AutomationConfig = {
     enabled: false,
-    maxPositionSize: 1000, // $1000 max per position
-    maxDailyLoss: 500,     // $500 max daily loss
-    maxOpenPositions: 3,
-    minConfidenceLevel: 60, // 60% minimum confidence (lowered for better signal generation)
+    maxPositionSize: parseInt(process.env.DEFAULT_MAX_POSITION_SIZE || '1000'),
+    maxDailyLoss: parseInt(process.env.DEFAULT_MAX_DAILY_LOSS || '500'),
+    maxOpenPositions: parseInt(process.env.MAX_OPEN_POSITIONS || '3'),
+    minConfidenceLevel: parseInt(process.env.MIN_CONFIDENCE_LEVEL || '70'), // Increased default for safety
     allowedSymbols: ['BTC-USD', 'ETH-USD', 'SOL-USD', 'BTC', 'ETH', 'SOL'],
     tradingHours: {
-      start: '00:00',
-      end: '23:59',
+      start: process.env.TRADING_HOURS_START || '00:00',
+      end: process.env.TRADING_HOURS_END || '23:59',
       timezone: 'UTC'
     }
   }
 
   private defaultRiskLimits: RiskLimits = {
-    maxLeverage: 5,
+    maxLeverage: parseInt(process.env.MAX_LEVERAGE || '5'),
     maxPortfolioAllocation: 25, // 25% max per position
-    stopLossPercentage: 5,      // 5% stop loss
-    takeProfitPercentage: 15,   // 15% take profit
+    stopLossPercentage: parseInt(process.env.DEFAULT_STOP_LOSS_PERCENTAGE || '5'),
+    takeProfitPercentage: parseInt(process.env.DEFAULT_TAKE_PROFIT_PERCENTAGE || '15'),
     maxDrawdownLimit: 20        // 20% max drawdown
+  }
+
+  /**
+   * Check if emergency stop is active
+   */
+  private isEmergencyStopActive(): boolean {
+    return process.env.EMERGENCY_STOP === 'true'
+  }
+
+  /**
+   * Check if paper trading mode is enabled
+   */
+  private isPaperTradingMode(): boolean {
+    return process.env.PAPER_TRADING_MODE === 'true'
   }
 
   async startAutomation(walletAddress: string): Promise<void> {
@@ -135,6 +149,16 @@ class AITradingAutomation {
 
   private async executeAutomationCycle(walletAddress: string): Promise<void> {
     console.log(`🔄 Executing automation cycle for ${this.activeAgents.size} agents...`)
+
+    // 🚨 CRITICAL SAFETY CHECKS
+    if (this.isEmergencyStopActive()) {
+      console.log('🚨 EMERGENCY STOP ACTIVE - All trading halted!')
+      return
+    }
+
+    if (this.isPaperTradingMode()) {
+      console.log('📄 Paper trading mode active - trades will be simulated')
+    }
 
     for (const [agentId, { agent, config }] of this.activeAgents) {
       console.log(`🤖 Processing agent: ${agent.name} (enabled: ${config.enabled})`)

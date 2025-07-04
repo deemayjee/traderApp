@@ -13,7 +13,7 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    storageKey: 'pallycryp-auth-token',
+    storageKey: 'pallytraders-auth-token',
     storage: {
       getItem: (key) => {
         if (typeof window === 'undefined') return null
@@ -45,7 +45,7 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   },
   global: {
     headers: {
-      'X-Client-Info': 'pallycryp-client'
+      'X-Client-Info': 'pallytraders-client'
     }
   },
   db: {

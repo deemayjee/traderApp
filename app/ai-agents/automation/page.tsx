@@ -25,20 +25,48 @@ export default function AutomationPage() {
         </div>
       </div>
 
-      {/* Important Notice */}
-      <Alert className="border-amber-200 bg-amber-50/50 text-amber-900">
-        <Lightbulb className="h-4 w-4 text-amber-600" />
-        <AlertTitle className="text-amber-900">Getting Started</AlertTitle>
-        <AlertDescription className="space-y-2 text-amber-800">
-          <p>Before enabling automation:</p>
-          <ul className="list-disc list-inside space-y-1 text-sm text-amber-800">
-            <li>Create and configure your AI agents with different strategies</li>
-            <li>Set appropriate risk limits (start with small position sizes)</li>
-            <li>Ensure your wallet is connected and has sufficient balance</li>
-            <li>Monitor the automation regularly, especially during the first few hours</li>
-          </ul>
-        </AlertDescription>
-      </Alert>
+      {/* Getting Started Card */}
+      <Card className="border-slate-300 bg-gradient-to-br from-amber-50 to-orange-100/50 shadow-lg">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2 text-amber-800">
+            <Lightbulb className="h-4 w-4 text-amber-600" />
+            Getting Started
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="text-sm text-amber-900 font-medium">
+            Before enabling automation:
+          </div>
+          
+          {/* Checklist Items */}
+          <div className="space-y-3">
+            <div className="flex items-start gap-3">
+              <div className="w-2 h-2 rounded-full bg-amber-500 mt-2 flex-shrink-0"></div>
+              <span className="text-sm text-amber-800">Create and configure your AI agents with different strategies</span>
+            </div>
+            <div className="flex items-start gap-3">
+              <div className="w-2 h-2 rounded-full bg-amber-500 mt-2 flex-shrink-0"></div>
+              <span className="text-sm text-amber-800">Set appropriate risk limits (start with small position sizes)</span>
+            </div>
+            <div className="flex items-start gap-3">
+              <div className="w-2 h-2 rounded-full bg-amber-500 mt-2 flex-shrink-0"></div>
+              <span className="text-sm text-amber-800">Ensure your wallet is connected and has sufficient balance</span>
+            </div>
+            <div className="flex items-start gap-3">
+              <div className="w-2 h-2 rounded-full bg-amber-500 mt-2 flex-shrink-0"></div>
+              <span className="text-sm text-amber-800">Monitor the automation regularly, especially during the first few hours</span>
+            </div>
+          </div>
+
+          {/* Warning */}
+          <Alert className="bg-amber-50 border-amber-200">
+            <ShieldCheck className="h-3 w-3 text-amber-600" />
+            <AlertDescription className="text-xs text-amber-800">
+              Start with small position sizes and monitor closely. You can always adjust settings later.
+            </AlertDescription>
+          </Alert>
+        </CardContent>
+      </Card>
 
       {/* Main Automation Panel */}
       <AutomationControlPanel />

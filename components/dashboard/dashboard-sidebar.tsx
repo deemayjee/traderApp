@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { LayoutDashboard, LineChart, Wallet, TrendingUp, Brain, Zap, LogOut, Activity } from "lucide-react"
+import { LayoutDashboard, LineChart, Wallet, TrendingUp, Brain, Zap, LogOut, Activity, Shield } from "lucide-react"
 import { useWalletAuth } from "@/components/auth/wallet-context"
 import { useUserProfile } from "@/contexts/user-profile-context"
 
@@ -19,6 +19,12 @@ export function DashboardSidebar() {
       href: "/dashboard",
       icon: <LayoutDashboard className="h-5 w-5" />,
       gradient: "from-blue-500 to-cyan-500"
+    },
+    {
+      title: "Wallet Setup",
+      href: "/dashboard/wallet-setup",
+      icon: <Shield className="h-5 w-5" />,
+      gradient: "from-green-500 to-emerald-500"
     },
     {
       title: "AI Agents",

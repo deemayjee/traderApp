@@ -7,7 +7,7 @@ export default function Loading() {
         <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center animate-pulse">
           <Bot className="w-8 h-8 text-primary" />
         </div>
-        <div className="text-sm text-muted-foreground">Loading HyperAgent...</div>
+        <div className="text-sm text-muted-foreground">Loading PallyTraders...</div>
         <div className="w-32 h-1 bg-muted rounded-full overflow-hidden">
           <div className="w-full h-full bg-primary/60 animate-pulse" />
         </div>

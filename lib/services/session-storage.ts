@@ -8,7 +8,7 @@ interface SessionData {
 
 export class SessionStorage {
   private static instance: SessionStorage
-  private readonly SESSION_KEY = 'pallycryp-session'
+  private readonly SESSION_KEY = 'pallytraders-session'
   private readonly CACHE_DURATION = 30 * 60 * 1000 // 30 minutes
 
   private constructor() {}

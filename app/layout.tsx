@@ -12,13 +12,13 @@ import { AuthProvider } from "@/components/auth/auth-context"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "HyperAgent | Autonomous Trading AI",
+  title: "PallyTraders | Autonomous Trading AI",
   description: "Train and deploy AI agents for autonomous trading on Hyperliquid. Advanced machine learning for superior trading performance.",
-  generator: 'HyperAgent',
+  generator: 'PallyTraders',
   keywords: "AI trading, autonomous trading, machine learning, algorithmic trading, Hyperliquid, trading bots, AI agents",
-  authors: [{ name: "HyperAgent Team" }],
+  authors: [{ name: "PallyTraders Team" }],
   openGraph: {
-    title: "HyperAgent | Autonomous Trading AI",
+    title: "PallyTraders | Autonomous Trading AI",
     description: "Train and deploy AI agents for autonomous trading on Hyperliquid",
     type: "website",
   },

@@ -19,7 +19,7 @@ if (typeof window === 'undefined') {
     },
     global: {
       headers: {
-        'X-Client-Info': 'pallycryp-server'
+        'X-Client-Info': 'pallytraders-server'
       }
     }
   })

@@ -62,7 +62,7 @@ export default function Login() {
             <Bot className="w-5 h-5 text-primary" />
           </div>
           <span className="text-xl font-bold bg-gradient-to-r from-foreground to-primary bg-clip-text text-transparent">
-            HyperAgent
+            PallyTraders
           </span>
         </Link>
 
@@ -82,7 +82,7 @@ export default function Login() {
             <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
               <Wallet className="w-8 h-8 text-primary" />
             </div>
-            <h1 className="text-3xl font-bold mb-2">Welcome to HyperAgent</h1>
+            <h1 className="text-3xl font-bold mb-2">Welcome to PallyTraders</h1>
             <p className="text-muted-foreground">
               Connect your wallet to access autonomous trading on Hyperliquid
             </p>

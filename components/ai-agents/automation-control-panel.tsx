@@ -202,7 +202,7 @@ export function AutomationControlPanel() {
 
       {/* Main Control Panel */}
       <Tabs defaultValue="control" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="control">Control</TabsTrigger>
           <TabsTrigger value="positions">Positions</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>

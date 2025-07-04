@@ -23,7 +23,8 @@ import {
   Clock,
   Sparkles,
   Trash2,
-  Settings
+  Settings,
+  Shield
 } from "lucide-react"
 import Link from "next/link"
 import { useWalletAuth } from "@/components/auth/wallet-context"
@@ -32,6 +33,7 @@ import { AutomationStatusIndicator } from "@/components/ai-agents/automation-sta
 import { EmergencyStopButton } from "@/components/dashboard/emergency-stop-button"
 import { agentSupabase } from "@/lib/services/agent-supabase"
 import { hyperliquidService } from "@/lib/services/hyperliquid-service"
+import { hyperliquidWalletSigner } from "@/lib/services/hyperliquid-wallet-signing"
 import { toast } from "sonner"
 
 export default function Dashboard() {
@@ -45,6 +47,7 @@ export default function Dashboard() {
   const [totalVolume, setTotalVolume] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [portfolioValue, setPortfolioValue] = useState(0)
+  const [hasHyperliquidWallet, setHasHyperliquidWallet] = useState<boolean | null>(null)
 
   // Load real data from services
   useEffect(() => {
@@ -53,6 +56,10 @@ export default function Dashboard() {
     const loadDashboardData = async () => {
       try {
         setIsLoading(true)
+        
+        // Check if user has Hyperliquid wallet configured
+        const hasWallet = await hyperliquidWalletSigner.hasWalletCredentials(user.address)
+        setHasHyperliquidWallet(hasWallet)
         
         // Load user's agents from database
         const userAgents = await agentSupabase.getAllAgents(user.address)
@@ -179,7 +186,7 @@ export default function Dashboard() {
               <Bot className="w-8 h-8 text-primary-foreground" />
             </div>
             <CardTitle className="text-2xl bg-gradient-to-r from-foreground to-primary bg-clip-text text-transparent">
-              HyperAgent
+              PallyTraders
             </CardTitle>
             <CardDescription className="text-base">
               Connect your wallet to start autonomous trading with AI
@@ -319,6 +326,63 @@ export default function Dashboard() {
               <EmergencyStopButton />
             </div>
           </div>
+          
+          {/* Wallet Setup Section - Show if no Hyperliquid wallet */}
+          {hasHyperliquidWallet === false && (
+            <Card className="border-orange-200 bg-gradient-to-r from-orange-50 to-amber-50 border-2">
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center">
+                    <AlertTriangle className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-xl text-orange-800">Enable Real Money Trading</CardTitle>
+                    <CardDescription className="text-orange-700">
+                      Add your Hyperliquid wallet to start trading with real funds
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                  <div className="flex items-center gap-3 p-3 bg-white/50 rounded-lg">
+                    <CheckCircle className="w-5 h-5 text-green-600" />
+                    <div>
+                      <p className="font-medium text-sm">Secure Storage</p>
+                      <p className="text-xs text-muted-foreground">Encrypted private keys</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 bg-white/50 rounded-lg">
+                    <CheckCircle className="w-5 h-5 text-green-600" />
+                    <div>
+                      <p className="font-medium text-sm">Paper Trading</p>
+                      <p className="text-xs text-muted-foreground">Test before going live</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 bg-white/50 rounded-lg">
+                    <CheckCircle className="w-5 h-5 text-green-600" />
+                    <div>
+                      <p className="font-medium text-sm">Emergency Stop</p>
+                      <p className="text-xs text-muted-foreground">Instant trading halt</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <Button asChild className="bg-orange-600 hover:bg-orange-700 text-white">
+                    <Link href="/dashboard/wallet-setup">
+                      <Shield className="w-4 h-4 mr-2" />
+                      Set Up Hyperliquid Wallet
+                    </Link>
+                  </Button>
+                  <Button variant="outline" asChild>
+                    <a href="https://app.hyperliquid.xyz" target="_blank" rel="noopener noreferrer">
+                      Get Hyperliquid Wallet
+                    </a>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
           
           {/* AI Agents Section */}
           <div className="space-y-4">

@@ -54,7 +54,7 @@ export function Navbar() {
             </div>
             <div className="flex flex-col">
               <span className="text-xl font-bold bg-gradient-to-r from-foreground to-primary bg-clip-text text-transparent">
-                HyperAgent
+                PallyTraders
               </span>
               <span className="text-xs text-muted-foreground -mt-1">
                 Autonomous Trading

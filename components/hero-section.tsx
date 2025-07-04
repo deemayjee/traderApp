@@ -44,7 +44,7 @@ export function HeroSection() {
             <Bot className="w-5 h-5 text-primary" />
           </div>
           <span className="text-xl font-bold bg-gradient-to-r from-foreground to-primary bg-clip-text text-transparent">
-            HyperAgent
+            PallyTraders
           </span>
         </Link>
 
