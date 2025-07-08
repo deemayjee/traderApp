@@ -242,8 +242,8 @@ export function CreateAgentDialog({ open, onOpenChange, onAgentCreated }: Create
         stopLossPercentage: formData.stopLossPercentage || 5,
         takeProfitPercentage: formData.takeProfitPercentage || 10,
         leverage: formData.leverage || 1,
-        focusAssets: formData.focusAssets || [],
-        tradingPairs: formData.tradingPairs || [],
+        focusAssets: formData.focusAssets && formData.focusAssets.length > 0 ? formData.focusAssets : ['BTC-USD', 'ETH-USD'],
+        tradingPairs: formData.tradingPairs && formData.tradingPairs.length > 0 ? formData.tradingPairs : ['BTC-USD', 'ETH-USD'],
         active: true, // Enable the agent by default
         isActive: true, // Enable automation by default
         riskTolerance: formData.riskTolerance || 50,

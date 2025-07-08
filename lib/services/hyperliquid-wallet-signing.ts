@@ -230,23 +230,20 @@ export class HyperliquidWalletSigner {
   }
 
   /**
-   * Check if wallet credentials exist
+   * Check if wallet credentials exist for a user
    */
-  async hasWalletCredentials(walletAddress: string): Promise<boolean> {
+  async hasWalletCredentials(userWalletAddress: string): Promise<boolean> {
     try {
-      if (this.encryptedKeys.has(walletAddress)) {
-        return true
+      const response = await fetch(`/api/wallet-setup?userWalletAddress=${encodeURIComponent(userWalletAddress)}`)
+      
+      if (!response.ok) {
+        return false
       }
-
-      const { data, error } = await supabase
-        .from('hyperliquid_wallets')
-        .select('wallet_address')
-        .eq('wallet_address', walletAddress)
-        .eq('is_active', true)
-        .single()
-
-      return !error && !!data
+      
+      const data = await response.json()
+      return data.hasCredentials || false
     } catch (error) {
+      console.error('Error checking wallet credentials:', error)
       return false
     }
   }

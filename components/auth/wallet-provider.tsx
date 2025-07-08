@@ -17,11 +17,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           logo: "https://auth.privy.io/logos/privy-logo-dark.png",
           walletChainType: "ethereum-only",
           walletList: [
+            "phantom",
             "metamask",
             "coinbase_wallet",
             "rainbow",
-            "trust_wallet",
-            "walletconnect"
+            "wallet_connect"
           ]
         },
         loginMethods: ["wallet"],

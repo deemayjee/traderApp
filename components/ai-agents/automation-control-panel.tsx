@@ -250,9 +250,18 @@ export function AutomationControlPanel() {
                     variant="outline"
                     onClick={async () => {
                       try {
-                        const agents = await agentSupabase.getAllAgents()
+                        if (!user?.address) {
+                          toast({
+                            title: "Wallet Required",
+                            description: "Please connect your wallet first",
+                            variant: "destructive"
+                          })
+                          return
+                        }
+                        
+                        const agents = await agentSupabase.getAllAgents(user.address)
                         if (agents.length > 0) {
-                          const testResult = await aiTradingAutomation.testSignalGeneration(agents[0].id, user?.address)
+                          const testResult = await aiTradingAutomation.testSignalGeneration(agents[0].id, user.address)
                           console.log('🧪 Signal generation test results:', testResult)
                           toast({
                             title: "Signal Test Complete",

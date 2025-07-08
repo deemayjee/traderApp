@@ -21,7 +21,9 @@ import {
   Clock,
   Zap,
   Brain,
-  RefreshCw
+  RefreshCw,
+  Eye,
+  Layers
 } from "lucide-react"
 import { useWalletAuth } from "@/components/auth/wallet-context"
 import { agentSupabase } from "@/lib/services/agent-supabase"
@@ -374,7 +376,7 @@ export default function LiveTradingPage() {
                     AI Agents
                   </CardTitle>
                   <Badge variant="secondary" className="bg-blue-100 text-blue-700">
-                    {agents.filter(a => a.status === 'active').length} Active
+                    {agents.filter(a => a.active).length} Active
                   </Badge>
                 </div>
               </CardHeader>

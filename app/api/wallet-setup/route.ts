@@ -18,6 +18,42 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
   }
 })
 
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const userWalletAddress = searchParams.get('userWalletAddress')
+
+    if (!userWalletAddress) {
+      return NextResponse.json(
+        { error: 'Missing userWalletAddress parameter' },
+        { status: 400 }
+      )
+    }
+
+    // Check if user has existing wallet credentials
+    const { data, error } = await supabaseAdmin
+      .from('hyperliquid_wallets')
+      .select('wallet_address')
+      .eq('user_wallet_address', userWalletAddress)
+      .eq('is_active', true)
+      .single()
+
+    const hasCredentials = !error && !!data
+
+    return NextResponse.json({
+      hasCredentials,
+      walletAddress: data?.wallet_address || null
+    })
+
+  } catch (error) {
+    console.error('Error checking wallet credentials:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { walletAddress, privateKey, userWalletAddress } = await request.json()

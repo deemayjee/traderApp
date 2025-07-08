@@ -80,7 +80,8 @@ class AITradingAutomation {
    * Check if paper trading mode is enabled
    */
   private isPaperTradingMode(): boolean {
-    return process.env.PAPER_TRADING_MODE === 'true'
+    // Enable paper trading by default for testing
+    return process.env.PAPER_TRADING_MODE !== 'false'
   }
 
   async startAutomation(walletAddress: string): Promise<void> {
@@ -570,15 +571,26 @@ class AITradingAutomation {
       if (!agentData) {
         console.error(`❌ Agent ${agentId} not found in active agents`)
         console.log(`📋 Available agents: ${Array.from(this.activeAgents.keys()).join(', ')}`)
+        
+        // Try to get all agents from database for debugging
+        if (walletAddress) {
+          const allAgents = await agentSupabase.getAllAgents(walletAddress)
+          console.log(`📊 All agents from database:`, allAgents.map(a => ({ id: a.id, name: a.name, active: a.active, isActive: a.isActive })))
+        }
+        
         return { agent: null, signals: [], marketData: [], analysis: [] }
       }
 
       const { agent } = agentData
       console.log(`✅ Found agent: ${agent.name}`)
       console.log(`📊 Agent config:`, {
+        id: agent.id,
+        name: agent.name,
         focusAssets: agent.focusAssets,
+        tradingPairs: agent.tradingPairs,
         riskTolerance: agent.riskTolerance,
         indicators: agent.indicators,
+        active: agent.active,
         isActive: agent.isActive
       })
 
@@ -606,10 +618,16 @@ class AITradingAutomation {
       console.log(`   - Signals generated: ${signals.length}`)
       console.log(`   - Market data points: ${marketData.length}`)
       console.log(`   - Analysis results: ${analysis.length}`)
+      
+      if (signals.length > 0) {
+        console.log(`   - Sample signal:`, signals[0])
+      } else {
+        console.log(`   - No signals generated - check focus assets and market conditions`)
+      }
 
       return { agent, signals, marketData, analysis }
     } catch (error) {
-      console.error(`❌ Error testing signal generation:`, error)
+      console.error('❌ Error in testSignalGeneration:', error)
       return { agent: null, signals: [], marketData: [], analysis: [] }
     }
   }

@@ -1,4 +1,4 @@
-# HyperAgent - Autonomous Trading AI
+# PallyTraders - Autonomous Trading AI
 
 > Train and deploy AI agents for autonomous trading on Hyperliquid with advanced machine learning and superior performance.
 
@@ -34,8 +34,8 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/hyperagent.git
-cd hyperagent
+git clone https://github.com/your-username/pallytraders.git
+cd pallytraders
 
 # Install dependencies
 npm install
