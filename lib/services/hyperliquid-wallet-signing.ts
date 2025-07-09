@@ -247,6 +247,50 @@ export class HyperliquidWalletSigner {
       return false
     }
   }
+
+  /**
+   * Get wallet credentials for a user
+   */
+  async getWalletCredentials(userWalletAddress: string): Promise<WalletCredentials | null> {
+    try {
+      const response = await fetch(`/api/wallet-setup?userWalletAddress=${encodeURIComponent(userWalletAddress)}`)
+      
+      if (!response.ok) {
+        return null
+      }
+      
+      const data = await response.json()
+      
+      if (!data.hasCredentials || !data.walletAddress) {
+        return null
+      }
+
+      // Get the encrypted private key from database
+      const { data: walletData, error } = await supabase
+        .from('hyperliquid_wallets')
+        .select('encrypted_private_key')
+        .eq('wallet_address', data.walletAddress)
+        .eq('is_active', true)
+        .single()
+
+      if (error || !walletData) {
+        console.error('Error fetching wallet credentials:', error)
+        return null
+      }
+
+      // Decrypt the private key
+      const privateKey = await decrypt(walletData.encrypted_private_key)
+      
+      return {
+        address: data.walletAddress,
+        privateKey,
+        isEncrypted: false
+      }
+    } catch (error) {
+      console.error('Error getting wallet credentials:', error)
+      return null
+    }
+  }
 }
 
 export const hyperliquidWalletSigner = new HyperliquidWalletSigner() 

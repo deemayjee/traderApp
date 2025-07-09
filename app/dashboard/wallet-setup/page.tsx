@@ -44,26 +44,26 @@ export default function WalletSetupPage() {
             <div className="p-4 border rounded-lg bg-green-50">
               <div className="flex items-center gap-2 mb-2">
                 <Shield className="h-4 w-4 text-green-600" />
-                <span className="font-medium text-green-800">Trading Enabled</span>
+                <span className="font-medium text-green-800">Wallet Created Successfully</span>
               </div>
               <p className="text-sm text-green-700">
-                Your wallet credentials are stored securely and encrypted. You can now:
+                Your new EVM wallet has been created and stored securely. You can now:
               </p>
               <ul className="text-sm text-green-700 mt-2 space-y-1">
                 <li>• Create AI trading agents</li>
-                <li>• Enable automated trading</li>
-                <li>• Monitor live positions</li>
-                <li>• Track performance metrics</li>
+                <li>• Start paper trading immediately</li>
+                <li>• Fund your wallet for real trading</li>
+                <li>• Monitor live positions and performance</li>
               </ul>
             </div>
 
             <div className="p-4 border rounded-lg bg-blue-50">
               <h4 className="font-medium text-blue-800 mb-2">💡 Next Steps:</h4>
               <ol className="text-sm text-blue-700 space-y-1">
-                <li>1. <strong>Start with Paper Trading</strong> - Test without real money</li>
-                <li>2. <strong>Create Your First Agent</strong> - Set up an AI trading bot</li>
-                <li>3. <strong>Monitor Performance</strong> - Watch your agent's decisions</li>
-                <li>4. <strong>Gradually Go Live</strong> - Enable real trading when ready</li>
+                <li>1. <strong>Start Paper Trading</strong> - Test your strategies risk-free</li>
+                <li>2. <strong>Create AI Agents</strong> - Set up automated trading bots</li>
+                <li>3. <strong>Fund Your Wallet</strong> - Add USDC for real trading</li>
+                <li>4. <strong>Go Live</strong> - Enable real money trading when ready</li>
               </ol>
             </div>
 
@@ -96,17 +96,17 @@ export default function WalletSetupPage() {
       </div>
 
       <div className="mb-6 text-center">
-        <h1 className="text-3xl font-bold mb-2">Enable Real Money Trading</h1>
+        <h1 className="text-3xl font-bold mb-2">Create Trading Wallet</h1>
         <p className="text-muted-foreground">
-          Add your Hyperliquid wallet to start automated trading with real funds
+          We'll create a secure EVM wallet for you to trade on Hyperliquid
         </p>
         
         <div className="flex justify-center gap-2 mt-4">
-          <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">
-            Paper Trading Mode Active
+          <Badge variant="secondary" className="bg-green-100 text-green-800">
+            Auto-Generated Wallet
           </Badge>
           <Badge variant="outline">
-            Testnet Environment
+            Secure & Encrypted
           </Badge>
         </div>
       </div>

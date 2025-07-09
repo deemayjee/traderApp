@@ -1,17 +1,28 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Shield, AlertTriangle, CheckCircle, Eye, EyeOff, ExternalLink } from "lucide-react"
-import { useWalletAuth } from "./wallet-context"
-import { hyperliquidWalletSigner } from "@/lib/services/hyperliquid-wallet-signing"
+import { 
+  Shield, 
+  AlertTriangle, 
+  Wallet2, 
+  Copy, 
+  Download, 
+  CheckCircle,
+  ExternalLink,
+  Zap,
+  Eye,
+  EyeOff
+} from "lucide-react"
+import { useWalletAuth } from "@/components/auth/wallet-context"
 import { useToast } from "@/hooks/use-toast"
+import { hyperliquidWalletSigner } from "@/lib/services/hyperliquid-wallet-signing"
 
 interface HyperliquidWalletSetupProps {
   onSetupComplete?: () => void
@@ -23,21 +34,35 @@ export function HyperliquidWalletSetup({ onSetupComplete, onCancel }: Hyperliqui
   const { toast } = useToast()
   const [isLoading, setIsLoading] = useState(false)
   const [showPrivateKey, setShowPrivateKey] = useState(false)
-  const [formData, setFormData] = useState({
-    privateKey: '',
-    walletAddress: '',
-    confirmAddress: ''
-  })
-  const [errors, setErrors] = useState<Record<string, string>>({})
   const [hasExistingWallet, setHasExistingWallet] = useState<boolean | null>(null)
+  const [walletInfo, setWalletInfo] = useState<{
+    walletAddress: string | null
+    balance: number
+    createdAt: string | null
+  } | null>(null)
+  const [newWalletData, setNewWalletData] = useState<{
+    walletAddress: string
+    privateKey: string
+  } | null>(null)
+  const [hasSavedPrivateKey, setHasSavedPrivateKey] = useState(false)
+  const [isResetting, setIsResetting] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
 
   // Check if user already has Hyperliquid wallet setup
   useEffect(() => {
     const checkExistingWallet = async () => {
       if (user?.address) {
         try {
-          const exists = await hyperliquidWalletSigner.hasWalletCredentials(user.address)
-          setHasExistingWallet(exists)
+          const response = await fetch(`/api/wallet-setup?userWalletAddress=${encodeURIComponent(user.address)}`)
+          if (response.ok) {
+            const data = await response.json()
+            setHasExistingWallet(data.hasCredentials)
+            setWalletInfo({
+              walletAddress: data.walletAddress,
+              balance: data.balance,
+              createdAt: data.createdAt
+            })
+          }
         } catch (error) {
           console.error('Error checking existing wallet:', error)
         }
@@ -46,69 +71,73 @@ export function HyperliquidWalletSetup({ onSetupComplete, onCancel }: Hyperliqui
     checkExistingWallet()
   }, [user?.address])
 
-  const validateForm = (): boolean => {
-    const newErrors: Record<string, string> = {}
-
-    // Validate private key format
-    if (!formData.privateKey) {
-      newErrors.privateKey = 'Private key is required'
-    } else if (!formData.privateKey.startsWith('0x') || formData.privateKey.length !== 66) {
-      newErrors.privateKey = 'Private key must be a valid 64-character hex string starting with 0x'
-    }
-
-    // Validate wallet address format
-    if (!formData.walletAddress) {
-      newErrors.walletAddress = 'Wallet address is required'
-    } else if (!formData.walletAddress.startsWith('0x') || formData.walletAddress.length !== 42) {
-      newErrors.walletAddress = 'Wallet address must be a valid Ethereum address starting with 0x'
-    }
-
-    // Validate address confirmation
-    if (formData.walletAddress !== formData.confirmAddress) {
-      newErrors.confirmAddress = 'Wallet addresses do not match'
-    }
-
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    if (!validateForm() || !user?.address) {
+  const handleCreateWallet = async () => {
+    if (!user?.address) {
+      toast({
+        title: "Error",
+        description: "Please connect your wallet first",
+        variant: "destructive"
+      })
       return
     }
 
     setIsLoading(true)
 
     try {
-      // Store the encrypted credentials
-      await hyperliquidWalletSigner.storeWalletCredentials(
-        formData.walletAddress,
-        formData.privateKey,
-        user.address
-      )
-
-      toast({
-        title: "Wallet Setup Complete!",
-        description: "Your Hyperliquid trading credentials have been stored securely.",
-        variant: "default"
+      const response = await fetch('/api/wallet-setup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userWalletAddress: user.address
+        })
       })
 
-      // Clear form data for security
-      setFormData({
-        privateKey: '',
-        walletAddress: '',
-        confirmAddress: ''
-      })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to create wallet')
+      }
 
-      onSetupComplete?.()
+      const data = await response.json()
+      
+      if (data.isNew) {
+        setNewWalletData({
+          walletAddress: data.walletAddress,
+          privateKey: data.privateKey
+        })
+        setHasExistingWallet(true)
+        setWalletInfo({
+          walletAddress: data.walletAddress,
+          balance: 0,
+          createdAt: new Date().toISOString()
+        })
+        
+        toast({
+          title: "Wallet Created!",
+          description: "Your new EVM wallet has been created. Please save your private key securely.",
+          variant: "default"
+        })
+      } else {
+        setHasExistingWallet(true)
+        setWalletInfo({
+          walletAddress: data.walletAddress,
+          balance: 0,
+          createdAt: null
+        })
+        
+        toast({
+          title: "Wallet Found!",
+          description: "You already have a Hyperliquid wallet set up.",
+          variant: "default"
+        })
+      }
       
     } catch (error) {
-      console.error('Error storing wallet credentials:', error)
+      console.error('Error creating wallet:', error)
       toast({
         title: "Setup Failed",
-        description: error instanceof Error ? error.message : "Failed to store wallet credentials",
+        description: error instanceof Error ? error.message : "Failed to create wallet",
         variant: "destructive"
       })
     } finally {
@@ -116,34 +145,216 @@ export function HyperliquidWalletSetup({ onSetupComplete, onCancel }: Hyperliqui
     }
   }
 
-  if (hasExistingWallet === true) {
+  const copyToClipboard = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      toast({
+        title: "Copied!",
+        description: `${label} copied to clipboard`,
+        variant: "default"
+      })
+    } catch (error) {
+      toast({
+        title: "Copy Failed",
+        description: "Failed to copy to clipboard",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const downloadPrivateKey = () => {
+    if (!newWalletData) return
+    
+    const blob = new Blob([newWalletData.privateKey], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'hyperliquid-private-key.txt'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    
+    toast({
+      title: "Downloaded!",
+      description: "Private key saved to your device",
+      variant: "default"
+    })
+  }
+
+  const handleCompleteSetup = () => {
+    if (newWalletData && !hasSavedPrivateKey) {
+      toast({
+        title: "Save Your Private Key",
+        description: "Please save your private key before continuing",
+        variant: "destructive"
+      })
+      return
+    }
+    
+    onSetupComplete?.()
+  }
+
+  const handleResetWallet = async () => {
+    if (!user?.address) return
+
+    setIsResetting(true)
+    try {
+      const response = await fetch(`/api/wallet-setup?userWalletAddress=${encodeURIComponent(user.address)}`, {
+        method: 'DELETE'
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to reset wallet')
+      }
+
+      // Reset state
+      setHasExistingWallet(false)
+      setWalletInfo(null)
+      setNewWalletData(null)
+      setHasSavedPrivateKey(false)
+
+      toast({
+        title: "Wallet Reset",
+        description: "Your existing wallet has been deleted. You can now create a new one.",
+        variant: "default"
+      })
+    } catch (error) {
+      console.error('Error resetting wallet:', error)
+      toast({
+        title: "Reset Failed",
+        description: error instanceof Error ? error.message : "Failed to reset wallet",
+        variant: "destructive"
+      })
+    } finally {
+      setIsResetting(false)
+    }
+  }
+
+  const handleExportPrivateKey = async () => {
+    if (!user?.address) return
+
+    setIsExporting(true)
+    try {
+      const response = await fetch('/api/wallet-setup', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userWalletAddress: user.address
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to export private key')
+      }
+
+      const data = await response.json()
+      
+      // Create download
+      const blob = new Blob([data.privateKey], { type: 'text/plain' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'hyperliquid-private-key.txt'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+
+      toast({
+        title: "Private Key Exported",
+        description: "Your private key has been downloaded. Keep it secure!",
+        variant: "default"
+      })
+    } catch (error) {
+      console.error('Error exporting private key:', error)
+      toast({
+        title: "Export Failed",
+        description: error instanceof Error ? error.message : "Failed to export private key",
+        variant: "destructive"
+      })
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  if (hasExistingWallet && walletInfo) {
     return (
       <Card className="w-full max-w-2xl mx-auto">
         <CardHeader>
-          <div className="flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2">
             <CheckCircle className="h-5 w-5 text-green-500" />
-            <CardTitle>Hyperliquid Wallet Connected</CardTitle>
-          </div>
+            Hyperliquid Wallet Connected
+          </CardTitle>
           <CardDescription>
-            You already have a Hyperliquid trading wallet configured for this account.
+            Your EVM wallet is ready for trading on Hyperliquid.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between p-4 border rounded-lg bg-green-50">
-            <div className="flex items-center gap-2">
-              <Shield className="h-4 w-4 text-green-600" />
-              <span className="text-sm font-medium text-green-800">Trading Enabled</span>
+
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Wallet Address</Label>
+              <div className="flex items-center gap-2">
+                <Input 
+                  value={walletInfo.walletAddress || ''} 
+                  readOnly 
+                  className="font-mono text-sm"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => copyToClipboard(walletInfo.walletAddress || '', 'Wallet address')}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
-            <Badge variant="secondary" className="bg-green-100 text-green-800">
-              Ready for Live Trading
-            </Badge>
+
+            <div className="space-y-2">
+              <Label>Balance</Label>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="text-lg px-3 py-1">
+                  ${walletInfo.balance.toFixed(2)} USD
+                </Badge>
+              </div>
+            </div>
+          </div>
+
+          <Alert>
+            <Shield className="h-4 w-4" />
+            <AlertDescription>
+              Your wallet is securely stored and ready for trading. You can now create AI agents and start paper trading.
+            </AlertDescription>
+          </Alert>
+
+          <div className="flex gap-2">
+            <Button onClick={onSetupComplete} className="flex-1">
+              Continue to Trading
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={handleExportPrivateKey}
+              disabled={isExporting}
+            >
+              {isExporting ? "Exporting..." : "Export Private Key"}
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={handleResetWallet}
+              disabled={isResetting}
+            >
+              {isResetting ? "Resetting..." : "Reset Wallet"}
+            </Button>
+            <Button variant="outline" onClick={onCancel}>
+              Cancel
+            </Button>
           </div>
         </CardContent>
-        <CardFooter>
-          <Button onClick={onCancel} variant="outline" className="w-full">
-            Close
-          </Button>
-        </CardFooter>
       </Card>
     )
   }
@@ -152,108 +363,153 @@ export function HyperliquidWalletSetup({ onSetupComplete, onCancel }: Hyperliqui
     <Card className="w-full max-w-2xl mx-auto">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Shield className="h-5 w-5" />
-          Hyperliquid Wallet Setup
+          <Wallet2 className="h-5 w-5" />
+          Create Hyperliquid Wallet
         </CardTitle>
         <CardDescription>
-          Add your Hyperliquid trading credentials to enable real money trading.
+          We'll create a secure EVM wallet for you to trade on Hyperliquid.
         </CardDescription>
       </CardHeader>
 
       <CardContent className="space-y-6">
-        <Tabs defaultValue="setup" className="w-full">
+        <Tabs defaultValue="create" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="setup">Wallet Setup</TabsTrigger>
-            <TabsTrigger value="guide">Setup Guide</TabsTrigger>
+            <TabsTrigger value="create">Create Wallet</TabsTrigger>
+            <TabsTrigger value="info">How It Works</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="setup" className="space-y-4">
-            <Alert>
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>
-                <strong>Security Notice:</strong> Your private key will be encrypted and stored securely. 
-                Never share your private key with anyone. Only add keys from wallets you control.
-              </AlertDescription>
-            </Alert>
+          <TabsContent value="create" className="space-y-4">
+            {newWalletData ? (
+              <div className="space-y-4">
+                <Alert>
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription>
+                    <strong>Important:</strong> Save your private key securely. You won't be able to see it again.
+                  </AlertDescription>
+                </Alert>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="walletAddress">Hyperliquid Wallet Address</Label>
-                <Input
-                  id="walletAddress"
-                  type="text"
-                  placeholder="0x1234567890abcdef..."
-                  value={formData.walletAddress}
-                  onChange={(e) => setFormData({ ...formData, walletAddress: e.target.value })}
-                  className={errors.walletAddress ? "border-red-500" : ""}
-                />
-                {errors.walletAddress && (
-                  <p className="text-sm text-red-500">{errors.walletAddress}</p>
-                )}
-              </div>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Wallet Address</Label>
+                    <div className="flex items-center gap-2">
+                      <Input 
+                        value={newWalletData.walletAddress} 
+                        readOnly 
+                        className="font-mono text-sm"
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => copyToClipboard(newWalletData.walletAddress, 'Wallet address')}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="confirmAddress">Confirm Wallet Address</Label>
-                <Input
-                  id="confirmAddress"
-                  type="text"
-                  placeholder="0x1234567890abcdef..."
-                  value={formData.confirmAddress}
-                  onChange={(e) => setFormData({ ...formData, confirmAddress: e.target.value })}
-                  className={errors.confirmAddress ? "border-red-500" : ""}
-                />
-                {errors.confirmAddress && (
-                  <p className="text-sm text-red-500">{errors.confirmAddress}</p>
-                )}
-              </div>
+                  <div className="space-y-2">
+                    <Label>Private Key</Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type={showPrivateKey ? "text" : "password"}
+                        value={newWalletData.privateKey}
+                        readOnly
+                        className="font-mono text-sm"
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowPrivateKey(!showPrivateKey)}
+                      >
+                        {showPrivateKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => copyToClipboard(newWalletData.privateKey, 'Private key')}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={downloadPrivateKey}
+                      >
+                        <Download className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="privateKey">Private Key</Label>
-                <div className="relative">
-                  <Input
-                    id="privateKey"
-                    type={showPrivateKey ? "text" : "password"}
-                    placeholder="0x1234567890abcdef..."
-                    value={formData.privateKey}
-                    onChange={(e) => setFormData({ ...formData, privateKey: e.target.value })}
-                    className={errors.privateKey ? "border-red-500 pr-10" : "pr-10"}
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                    onClick={() => setShowPrivateKey(!showPrivateKey)}
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="saved-key"
+                      checked={hasSavedPrivateKey}
+                      onChange={(e) => setHasSavedPrivateKey(e.target.checked)}
+                      className="rounded"
+                    />
+                    <Label htmlFor="saved-key" className="text-sm">
+                      I have saved my private key securely
+                    </Label>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button 
+                    onClick={handleCompleteSetup} 
+                    disabled={!hasSavedPrivateKey}
+                    className="flex-1"
                   >
-                    {showPrivateKey ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
+                    Complete Setup
+                  </Button>
+                  <Button variant="outline" onClick={onCancel}>
+                    Cancel
                   </Button>
                 </div>
-                {errors.privateKey && (
-                  <p className="text-sm text-red-500">{errors.privateKey}</p>
-                )}
               </div>
+            ) : (
+              <div className="space-y-4">
+                <Alert>
+                  <Zap className="h-4 w-4" />
+                  <AlertDescription>
+                    We generate a new EVM wallet specifically for Hyperliquid trading.
+                  </AlertDescription>
+                </Alert>
 
-              <div className="flex gap-2 pt-4">
-                <Button type="submit" disabled={isLoading} className="flex-1">
-                  {isLoading ? "Setting Up..." : "Add Wallet"}
-                </Button>
-                <Button type="button" variant="outline" onClick={onCancel}>
-                  Cancel
-                </Button>
+                <div className="flex gap-2">
+                  <Button 
+                    onClick={handleCreateWallet} 
+                    disabled={isLoading}
+                    className="flex-1"
+                  >
+                    {isLoading ? "Creating Wallet..." : "Create EVM Wallet"}
+                  </Button>
+                  <Button variant="outline" onClick={onCancel}>
+                    Cancel
+                  </Button>
+                </div>
               </div>
-            </form>
+            )}
           </TabsContent>
 
-          <TabsContent value="guide" className="space-y-4">
+          <TabsContent value="info" className="space-y-4">
             <div className="space-y-4">
               <div className="p-4 border rounded-lg">
-                <h4 className="font-medium mb-2">Step 1: Get Your Hyperliquid Wallet</h4>
+                <h4 className="font-medium mb-2">🔐 Secure Wallet Creation</h4>
                 <p className="text-sm text-muted-foreground mb-2">
-                  You need a Hyperliquid wallet with an EVM-compatible private key.
+                  We generate a new EVM wallet specifically for Hyperliquid trading.
+                </p>
+                <ul className="text-sm text-muted-foreground space-y-1">
+                  <li>• Private key is encrypted and stored securely</li>
+                  <li>• Wallet is isolated from your main wallet</li>
+                  <li>• Only used for Hyperliquid trading</li>
+                </ul>
+              </div>
+
+              <div className="p-4 border rounded-lg">
+                <h4 className="font-medium mb-2">💰 Fund Your Wallet</h4>
+                <p className="text-sm text-muted-foreground mb-2">
+                  After creation, you'll need to fund your wallet to start trading.
                 </p>
                 <Button variant="outline" size="sm" asChild>
                   <a href="https://app.hyperliquid.xyz" target="_blank" rel="noopener noreferrer">
@@ -263,35 +519,14 @@ export function HyperliquidWalletSetup({ onSetupComplete, onCancel }: Hyperliqui
               </div>
 
               <div className="p-4 border rounded-lg">
-                <h4 className="font-medium mb-2">Step 2: Export Private Key</h4>
+                <h4 className="font-medium mb-2">🚀 Start Trading</h4>
                 <ul className="text-sm text-muted-foreground space-y-1">
-                  <li>• Connect your wallet to Hyperliquid</li>
-                  <li>• Export the private key from MetaMask, Trust Wallet, etc.</li>
-                  <li>• Ensure it's in EVM format (starts with 0x)</li>
+                  <li>• Create AI agents with different strategies</li>
+                  <li>• Start with paper trading to test</li>
+                  <li>• Monitor performance and adjust settings</li>
+                  <li>• Enable real trading when ready</li>
                 </ul>
               </div>
-
-              <div className="p-4 border rounded-lg">
-                <h4 className="font-medium mb-2">Step 3: Fund Your Wallet</h4>
-                <ul className="text-sm text-muted-foreground space-y-1">
-                  <li>• Deposit USDC to your Hyperliquid wallet</li>
-                  <li>• Start with small amounts for testing</li>
-                  <li>• Verify deposits before trading</li>
-                </ul>
-              </div>
-
-              <Alert>
-                <Shield className="h-4 w-4" />
-                <AlertDescription>
-                  <strong>Security Tips:</strong>
-                  <ul className="mt-2 space-y-1 text-sm">
-                    <li>• Use a dedicated wallet for trading</li>
-                    <li>• Keep private keys secure and never share them</li>
-                    <li>• Start with testnet for practice</li>
-                    <li>• Monitor your positions regularly</li>
-                  </ul>
-                </AlertDescription>
-              </Alert>
             </div>
           </TabsContent>
         </Tabs>
